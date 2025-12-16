@@ -22,6 +22,44 @@
             padding: 0;
             margin: 0;
         }
+        /* Custom Styling for Layer Control */
+        .leaflet-control-layers {
+            border-radius: 8px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            padding: 12px !important;
+            background: white;
+            font-family: 'Open Sans', sans-serif;
+            border: none !important;
+        }
+        .leaflet-control-layers-toggle {
+            width: 44px !important;
+            height: 44px !important;
+            border-radius: 8px;
+        }
+        .leaflet-control-layers-expanded {
+            padding: 5px !important;
+            min-width: 170px;
+        }
+        .leaflet-control-layers label {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+            color: #333;
+            cursor: pointer;
+        }
+        .leaflet-control-layers input[type="checkbox"], 
+        .leaflet-control-layers input[type="radio"] {
+            margin-right: 10px;
+            cursor: pointer;
+            accent-color: #0078A8; /* Theme color */
+            transform: scale(1.2);
+        }
+        /* Style the spacing/separator in the tree view if present */
+        .leaflet-layerstree-node {
+            padding-top: 4px;
+            padding-bottom: 4px;
+        }
     </style>
     <title></title>
 </head>
