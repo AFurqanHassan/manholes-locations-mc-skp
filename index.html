@@ -16,56 +16,369 @@
     <style>
         html,
         body,
-        #map {
+        #main-container {
             width: 100%;
             height: 100%;
             padding: 0;
             margin: 0;
+            display: flex;
+            overflow: hidden;
         }
-        /* Custom Styling for Layer Control */
-        .leaflet-control-layers {
-            border-radius: 8px !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
-            padding: 12px !important;
-            background: white;
+        #sidebar {
+            width: 300px;
+            height: 100%;
+            background: #ffffff;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.05);
+            z-index: 1000;
+        }
+        #map {
+            flex-grow: 1;
+            height: 100%;
+        }
+        .sidebar-header {
+            padding: 25px 20px;
+            background: linear-gradient(135deg, #0078A8 0%, #005a7e 100%);
+            color: white;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .sidebar-header h2 {
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
             font-family: 'Open Sans', sans-serif;
-            border: none !important;
+            letter-spacing: 0.5px;
         }
-        .leaflet-control-layers-toggle {
-            width: 44px !important;
-            height: 44px !important;
+        .sidebar-section {
+            padding: 20px 15px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .sidebar-section h3 {
+            margin: 0 0 15px 0;
+            font-size: 13px;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            font-weight: 700;
+            font-family: 'Open Sans', sans-serif;
+        }
+        .control-container {
+            background: #fdfdfd;
             border-radius: 8px;
+            border: 1px solid #ebebeb;
+            overflow: hidden;
         }
-        .leaflet-control-layers-expanded {
-            padding: 5px !important;
-            min-width: 170px;
+        /* SEAMLESS INTEGRATION - Blend into sidebar base */
+        #layers-control {
+            padding: 0 !important;
+            margin: 0 !important;
         }
-        .leaflet-control-layers label {
-            margin-bottom: 8px;
+        #layers-control .leaflet-control-layers,
+        #layers-control .leaflet-control-layers-list,
+        #layers-control .leaflet-control-layers-expanded,
+        #layers-control .leaflet-layerstree-children,
+        #layers-control .leaflet-layerstree-header,
+        #layers-control .leaflet-layerstree-node {
+            padding-left: 0 !important;
+            margin-left: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+        }
+        /* Hide ONLY the specific Leaflet UI ornaments */
+        #layers-control span.leaflet-layerstree-header-pointer,
+        #layers-control .leaflet-layerstree-spacer,
+        #layers-control .leaflet-layerstree-nevershow,
+        .leaflet-control-layers-toggle {
+            display: none !important;
+        }
+        .leaflet-layerstree-node {
+            padding: 10px 0 !important; /* Vertical padding only */
+            margin: 0 !important;
+            border-radius: 0;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            display: flex !important;
+            align-items: center;
+            width: 100% !important;
+            box-sizing: border-box;
+            border-bottom: 1px solid #f5f5f5; /* Subtle divider instead of box border */
+        }
+        .leaflet-layerstree-node:hover {
+            background: #fdfdfd;
+        }
+        .leaflet-layerstree-header label {
+            display: flex !important;
+            align-items: center !important;
+            width: 100% !important;
+            cursor: pointer !important;
+            font-size: 14px !important;
+            color: #333 !important;
+            font-weight: 600 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            visibility: visible !important;
+            display: flex !important;
+        }
+        .leaflet-layerstree-header-name {
+            display: inline-block !important;
+            visibility: visible !important;
+            margin-left: 10px !important;
+            white-space: normal !important; /* Allow wrapping */
+            word-break: break-all !important; /* Break long words */
+            max-width: 160px; /* Limit width to leave room for trash and picker */
+            line-height: 1.4;
+            padding: 4px 0;
+        }
+        .layer-color-picker-wrapper {
             display: flex;
             align-items: center;
-            font-size: 14px;
-            color: #333;
+            margin-right: 8px;
             cursor: pointer;
         }
-        .leaflet-control-layers input[type="checkbox"], 
-        .leaflet-control-layers input[type="radio"] {
-            margin-right: 10px;
+        .layer-color-picker {
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 2px solid #fff;
+            border-radius: 50%;
             cursor: pointer;
-            accent-color: #0078A8; /* Theme color */
+            outline: none;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            -webkit-appearance: none;
+            background: none;
+        }
+        .layer-color-picker::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        .layer-color-picker::-webkit-color-swatch {
+            border: none;
+            border-radius: 50%;
+        }
+        /* Custom Checkbox and Radio - ABSOLUTE START */
+        .leaflet-control-layers input[type="checkbox"],
+        .leaflet-control-layers input[type="radio"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #0078A8;
+            border-radius: 4px;
+            margin: 0 12px 0 0 !important; /* Zero left margin! */
+            position: relative;
+            cursor: pointer;
+            background: #fff;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            display: inline-block !important;
+        }
+        .leaflet-control-layers input[type="radio"] {
+            border-radius: 50%;
+        }
+        .leaflet-control-layers input[type="checkbox"]:checked {
+            background: #0078A8;
+            border-color: #0078A8;
+        }
+        .leaflet-control-layers input[type="checkbox"]:checked::after {
+            content: "\f00c";
+            font-family: "Font Awesome 5 Free";
+            font-weight: 900;
+            color: white;
+            font-size: 11px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .leaflet-control-layers input[type="radio"]:checked {
+            border-color: #0078A8;
+        }
+        .leaflet-control-layers input[type="radio"]:checked::after {
+            content: "";
+            width: 10px;
+            height: 10px;
+            background: #0078A8;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        /* Dynamic Layer Removal UI */
+        .layer-row-container {
+            display: flex;
+            align-items: center; /* Center items vertically */
+            width: 100%;
+            justify-content: space-between;
+            overflow: hidden;
+            padding-right: 5px;
+        }
+        .layer-label-group {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+        .remove-layer-btn {
+            color: #ff4d4d;
+            cursor: pointer;
+            padding: 5px 8px;
+            font-size: 14px;
+            transition: all 0.2s;
+            opacity: 0.6;
+            margin-left: auto;
+        }
+        .remove-layer-btn:hover {
+            opacity: 1;
             transform: scale(1.2);
         }
-        /* Style the spacing/separator in the tree view if present */
-        .leaflet-layerstree-node {
-            padding-top: 4px;
-            padding-bottom: 4px;
+        /* Legend Alignment */
+        .leaflet-layerstree-header img {
+            margin-right: 10px !important;
+            max-height: 22px !important;
+            vertical-align: middle !important;
+            border-radius: 2px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        /* Sidebar Toggle for Mobile */
+        #sidebar-toggle {
+            display: none;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1100;
+            background: #0078A8;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        @media (max-width: 768px) {
+            #sidebar {
+                position: absolute;
+                left: -320px;
+                transition: left 0.3s ease;
+            }
+            #sidebar.active {
+                left: 0;
+            }
+            #sidebar-toggle {
+                display: block;
+            }
+        }
+        /* Upload UI Styling */
+        .upload-control {
+            padding: 5px;
+            font-family: 'Open Sans', sans-serif;
+        }
+        .upload-field {
+            margin-bottom: 10px;
+        }
+        .custom-file-upload {
+            display: block;
+            padding: 12px;
+            cursor: pointer;
+            background: #f8f9fa;
+            border: 1px dashed #ccd;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: #0078A8;
+            transition: all 0.3s ease;
+        }
+        .custom-file-upload:hover {
+            background: #eef7fb;
+            border-color: #0078A8;
+        }
+        .custom-file-upload i {
+            margin-right: 8px;
+            font-size: 16px;
+        }
+        .upload-field input[type="file"] {
+            display: none;
+        }
+        .file-name {
+            display: block;
+            font-size: 11px;
+            color: #888;
+            margin-top: 6px;
+            text-align: center;
+        }
+        .upload-control button {
+            width: 100%;
+            padding: 12px;
+            background: #0078A8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0,120,168,0.2);
+        }
+        .upload-control button:hover {
+            background: #005a7e;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 15px rgba(0,120,168,0.3);
+        }
+        .upload-control .status {
+            margin-top: 15px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            font-style: italic;
         }
     </style>
     <title></title>
 </head>
 
 <body>
-    <div id="map">
+    <button id="sidebar-toggle"><i class="fas fa-bars"></i> Menù</button>
+    <div id="main-container">
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <h2>Manhole Locations</h2>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Layers</h3>
+                <div id="layers-control"></div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Upload Data</h3>
+                <div class="upload-control">
+                    <div class="upload-field">
+                        <label for="csvFile" class="custom-file-upload">
+                            <i class="fas fa-file-csv"></i> Select CSV File
+                        </label>
+                        <input type="file" id="csvFile" accept=".csv">
+                        <span id="csv-name" class="file-name">No file selected</span>
+                    </div>
+                    <div class="upload-field">
+                        <label for="imgFiles" class="custom-file-upload">
+                            <i class="fas fa-images"></i> Select Images
+                        </label>
+                        <input type="file" id="imgFiles" accept="image/*" multiple>
+                        <span id="img-count" class="file-name">0 images selected</span>
+                    </div>
+                    <button id="uploadBtn">
+                        <i class="fas fa-cloud-upload-alt"></i> Add to Map
+                    </button>
+                    <div id="uploadStatus" class="status"></div>
+                </div>
+            </div>
+        </div>
+        <div id="map"></div>
     </div>
     <script src="js/qgis2web_expressions.js"></script>
     <script src="js/leaflet.js"></script>
@@ -82,6 +395,26 @@
     <script src="data/ManholeCovers_1.js"></script>
     <script src="data/MCSKPZones_2.js"></script>
     <script>
+        // Color palette for dynamic layers
+        var colorPalette = ['#28a745', '#007bff', '#e83e8c', '#fd7e14', '#6f42c1', '#20c997', '#ffc107', '#17a2b8'];
+        var colorIndex = 0;
+
+        // Global function to change dynamic layer color
+        window.changeLayerColor = function(layerId, newColor) {
+            var targetLayer = null;
+            for (var j = 0; j < overlaysTree.length; j++) {
+                if (overlaysTree[j].id === layerId) {
+                    targetLayer = overlaysTree[j].layer;
+                    break;
+                }
+            }
+            if (targetLayer) {
+                targetLayer.setStyle({
+                    fillColor: newColor
+                });
+            }
+        };
+
         var highlightLayer;
         function highlightFeature(e) {
             highlightLayer = e.target;
@@ -89,7 +422,7 @@
         }
         var map = L.map('map', {
             zoomControl: false, maxZoom: 28, minZoom: 1
-        }).fitBounds([[31.646186109758208, 73.93878504721224], [31.765617782877438, 74.08374843192465]]);
+        });
         var hash = new L.Hash(map);
         map.attributionControl.setPrefix('<a href="https://github.com/AFurqanHassan" target="_blank">Ahmad Furqan Hassan</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
         var autolinker = new Autolinker({ truncate: { length: 30, location: 'smart' } });
@@ -155,18 +488,24 @@
             }
         }
         var zoomControl = L.control.zoom({
-            position: 'topleft'
+            position: 'topright'
         }).addTo(map);
+
         var measureControl = new L.Control.Measure({
-            position: 'topleft',
+            position: 'topright',
             primaryLengthUnit: 'meters',
             secondaryLengthUnit: 'kilometers',
             primaryAreaUnit: 'sqmeters',
             secondaryAreaUnit: 'hectares'
         });
         measureControl.addTo(map);
-        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
-        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+
+        var measureToggleElements = document.getElementsByClassName('leaflet-control-measure-toggle');
+        if (measureToggleElements.length > 0) {
+            var measureToggle = measureToggleElements[0];
+            measureToggle.innerHTML = '';
+            measureToggle.className += ' fas fa-ruler';
+        }
         var bounds_group = new L.featureGroup([]);
         function setBounds() {
             map.setMaxBounds(map.getBounds());
@@ -342,70 +681,67 @@
         });
         bounds_group.addLayer(layer_MCSKPZones_2);
         map.addLayer(layer_MCSKPZones_2);
+        map.fitBounds(layer_MCSKPZones_2.getBounds());
         var overlaysTree = [
             { label: '<img src="legend/MCSKPZones_2.png" /> MC SKP Zones', layer: layer_MCSKPZones_2 },
             { label: '<img src="legend/ManholeCovers_1.png" /> Manhole Covers', layer: layer_ManholeCovers_1 },
             { label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: 'bm' },]
         var lay = L.control.layers.tree(null, overlaysTree, {
-            //namedToggle: true,
-            //selectorBack: false,
-            //closedSymbol: '&#8862; &#x1f5c0;',
-            //openedSymbol: '&#8863; &#x1f5c1;',
-            //collapseAll: 'Collapse all',
-            //expandAll: 'Expand all',
             collapsed: false,
         });
         lay.addTo(map);
-        document.addEventListener("DOMContentLoaded", function () {
-            // set new Layers List height which considers toggle icon
-            function newLayersListHeight() {
-                var layerScrollbarElement = document.querySelector('.leaflet-control-layers-scrollbar');
-                if (layerScrollbarElement) {
-                    var layersListElement = document.querySelector('.leaflet-control-layers-list');
-                    var originalHeight = layersListElement.style.height
-                        || window.getComputedStyle(layersListElement).height;
-                    var newHeight = parseFloat(originalHeight) - 50;
-                    layersListElement.style.height = newHeight + 'px';
-                }
-            }
-            var isLayersListExpanded = true;
-            var controlLayersElement = document.querySelector('.leaflet-control-layers');
-            var toggleLayerControl = document.querySelector('.leaflet-control-layers-toggle');
-            // toggle Collapsed/Expanded and apply new Layers List height
-            toggleLayerControl.addEventListener('click', function () {
-                if (isLayersListExpanded) {
-                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
-                } else {
-                    controlLayersElement.classList.add('leaflet-control-layers-expanded');
-                }
-                isLayersListExpanded = !isLayersListExpanded;
-                newLayersListHeight()
-            });
-            // apply new Layers List height if toggle layerstree
-            if (controlLayersElement) {
-                controlLayersElement.addEventListener('click', function (event) {
-                    var toggleLayerHeaderPointer = event.target.closest('.leaflet-layerstree-header-pointer span');
-                    if (toggleLayerHeaderPointer) {
-                        newLayersListHeight();
-                    }
-                });
-            }
-            // Collapsed/Expanded at Start to apply new height
-            setTimeout(function () {
-                toggleLayerControl.click();
-            }, 10);
-            setTimeout(function () {
-                toggleLayerControl.click();
-            }, 10);
-            // Collapsed touch/small screen
-            var isSmallScreen = window.innerWidth < 650;
-            if (isSmallScreen) {
-                setTimeout(function () {
-                    controlLayersElement.classList.remove('leaflet-control-layers-expanded');
-                    isLayersListExpanded = !isLayersListExpanded;
-                }, 500);
-            }
+        // Move layers control to sidebar
+        document.getElementById('layers-control').appendChild(lay.getContainer());
+        // Sidebar Toggle Logic
+        document.getElementById('sidebar-toggle').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('active');
         });
+
+        // Update file names in upload section
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            var name = e.target.files.length > 0 ? e.target.files[0].name : "No file selected";
+            document.getElementById('csv-name').innerText = name;
+        });
+        document.getElementById('imgFiles').addEventListener('change', function(e) {
+            var count = e.target.files.length;
+            document.getElementById('img-count').innerText = count + " images selected";
+        });
+
+        document.addEventListener("DOMContentLoaded", function () {
+            // Sidebar logic: Remove old layer control toggle behavior if not needed
+            // But keep it for reference or remove if purely sidebar based
+        });
+        // Global function for dynamic layer removal
+        window.removeDynamicLayer = function(layerId) {
+            // Find the layer in overlaysTree
+            var index = -1;
+            var targetLayer = null;
+            
+            for (var j = 0; j < overlaysTree.length; j++) {
+                if (overlaysTree[j].id === layerId) {
+                    index = j;
+                    targetLayer = overlaysTree[j].layer;
+                    break;
+                }
+            }
+
+            if (index > -1) {
+                // Remove from map
+                if (targetLayer) map.removeLayer(targetLayer);
+                
+                // Remove from local collection
+                overlaysTree.splice(index, 1);
+                
+                // Refresh Sidebar
+                if (lay) {
+                    lay.setOverlayTree(overlaysTree);
+                    // Re-hide toggle icons
+                    var toggles = document.querySelectorAll('.leaflet-control-layers-toggle');
+                    toggles.forEach(function(t) { t.style.display = 'none'; });
+                }
+            }
+        };
+
         setBounds();
         var i = 0;
         layer_MCSKPZones_2.eachLayer(function (layer) {
@@ -429,6 +765,136 @@
         });
         map.on("layerremove", function () {
             resetLabels([layer_MCSKPZones_2]);
+        });
+
+        // CSV and Image Upload Logic
+        document.getElementById('uploadBtn').addEventListener('click', function () {
+            var csvInput = document.getElementById('csvFile');
+            var imgInput = document.getElementById('imgFiles');
+            var status = document.getElementById('uploadStatus');
+
+            if (!csvInput.files.length) {
+                alert('Please select a CSV file.');
+                return;
+            }
+
+            status.innerHTML = 'Processing...';
+
+            // Map image names to Blob URLs
+            var imagesMap = new Map();
+            for (var i = 0; i < imgInput.files.length; i++) {
+                var file = imgInput.files[i];
+                imagesMap.set(file.name, URL.createObjectURL(file));
+            }
+
+            var reader = new FileReader();
+            var fileName = csvInput.files[0].name.replace(/\.[^/.]+$/, ""); // Strip extension
+
+            reader.onload = function (e) {
+                var text = e.target.result;
+                var lines = text.split(/\r?\n/);
+                var headers = lines[0].toLowerCase().split(',');
+                
+                var latIdx = headers.indexOf('latitude');
+                if (latIdx === -1) latIdx = headers.indexOf('lat');
+                var lonIdx = headers.indexOf('longitude');
+                if (lonIdx === -1) lonIdx = headers.indexOf('lon');
+                if (lonIdx === -1) lonIdx = headers.indexOf('lng');
+                var picsIdx = headers.indexOf('pics');
+
+                if (latIdx === -1 || lonIdx === -1) {
+                    alert('CSV must contain latitude and longitude columns.');
+                    status.innerHTML = 'Error: Missing columns.';
+                    return;
+                }
+
+                var features = [];
+                for (var i = 1; i < lines.length; i++) {
+                    if (!lines[i].trim()) continue;
+                    var cols = lines[i].split(',');
+                    var lat = parseFloat(cols[latIdx]);
+                    var lon = parseFloat(cols[lonIdx]);
+                    var picName = picsIdx !== -1 ? cols[picsIdx].trim() : '';
+
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        var blobUrl = imagesMap.get(picName) || '';
+                        features.push({
+                            type: 'Feature',
+                            properties: {
+                                'FID': 'upload-' + fileName + '-' + i,
+                                'PICS': blobUrl,
+                                'OriginalPic': picName
+                            },
+                            geometry: {
+                                type: 'Point',
+                                coordinates: [lon, lat]
+                            }
+                        });
+                    }
+                }
+
+                if (features.length > 0) {
+                    var uploadGeoJson = {
+                        type: 'FeatureCollection',
+                        features: features
+                    };
+
+                    // Pick next color from palette
+                    var defaultColor = colorPalette[colorIndex % colorPalette.length];
+                    colorIndex++;
+
+                    var layer_Uploaded = new L.geoJson(uploadGeoJson, {
+                        interactive: true,
+                        onEachFeature: pop_ManholeCovers_1, 
+                        pointToLayer: function (feature, latlng) {
+                            return L.circleMarker(latlng, {
+                                radius: 8,
+                                fillColor: defaultColor,
+                                color: "#000",
+                                weight: 1,
+                                opacity: 1,
+                                fillOpacity: 0.8
+                            });
+                        }
+                    });
+
+                    // Add to map and zoom
+                    layer_Uploaded.addTo(map);
+                    map.fitBounds(layer_Uploaded.getBounds());
+                    
+                    // Add to layers section with unique ID, Color Picker and Removal button
+                    if (lay) {
+                        var uniqueId = 'dyn_' + Date.now();
+                        var labelHTML = '<div class="layer-row-container">' +
+                                            '<div class="layer-label-group">' +
+                                                '<div class="layer-color-picker-wrapper">' +
+                                                    '<input type="color" class="layer-color-picker" value="' + defaultColor + '" ' +
+                                                    'onchange="changeLayerColor(\'' + uniqueId + '\', this.value)" title="Change Layer Color">' +
+                                                '</div>' +
+                                                '<span class="leaflet-layerstree-header-name">' + fileName + '</span>' +
+                                            '</div>' +
+                                            '<i class="fas fa-trash-alt remove-layer-btn" onclick="removeDynamicLayer(\'' + uniqueId + '\'); event.stopPropagation();" title="Remove Layer"></i>' +
+                                        '</div>';
+
+                        overlaysTree.push({ 
+                            id: uniqueId,
+                            label: labelHTML, 
+                            layer: layer_Uploaded 
+                        });
+                        
+                        lay.setOverlayTree(overlaysTree);
+                        
+                        // Re-hide toggle icons
+                        var toggles = document.querySelectorAll('.leaflet-control-layers-toggle');
+                        toggles.forEach(function(t) { t.style.display = 'none'; });
+                    }
+
+                    status.innerHTML = 'Loaded ' + features.length + ' points.';
+                } else {
+                    status.innerHTML = 'No valid data found.';
+                }
+            };
+            reader.readAsText(csvInput.files[0]);
         });
     </script>
 </body>
