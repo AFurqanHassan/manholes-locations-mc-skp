@@ -560,7 +560,6 @@
     </style>
     <title>Manhole Locations — Interactive Map</title>
   </head>
-
   <body>
     <div id="page-bg" aria-hidden="true"></div>
     <canvas id="bg-stars" aria-hidden="true"></canvas>
@@ -741,7 +740,7 @@
       });
       var hash = new L.Hash(map);
       map.attributionControl.setPrefix(
-        '<a href="https://github.com/AFurqanHassan" target="_blank">Ahmad Furqan Hassan</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">WASA SKP</a> &middot; <a href="https://qgis.org">QGIS</a>'
+        '<a href="https://github.com/AFurqanHassan" target="_blank">Ahmad Furqan Hassan</a> &middot; <a href="https://punjab.gov.pk/wasa" target="_blank">WASA SKP</a>'
       );
       var autolinker = new Autolinker({
         truncate: { length: 30, location: "smart" },
@@ -1172,7 +1171,6 @@
           }
         }
       };
-
       setBounds();
       var i = 0;
       layer_MCSKPZones_2.eachLayer(function (layer) {
@@ -1349,6 +1347,7 @@
           };
           reader.readAsText(csvInput.files[0]);
         });
+
       // Debug: indicate script loaded and map objects created
       if (typeof map !== 'undefined') {
         map.whenReady(function(){ console.log('Map initialized (whenReady)'); });
