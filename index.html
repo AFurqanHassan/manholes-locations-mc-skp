@@ -3,10 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta
-      name="viewport"
-      content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="stylesheet" href="css/leaflet.css" />
@@ -26,16 +23,108 @@
         display: flex;
         overflow: hidden;
       }
+      /* Full-page animated background (subtle, professional) */
+      #page-bg{
+        position:fixed;
+        inset:0;
+        z-index:-2; /* sit behind canvas layers */
+        pointer-events:none;
+        background-image: url('images/bg-night.jpg'),
+          radial-gradient(circle at 10% 20%, rgba(99,102,241,0.06), transparent 12%),
+          radial-gradient(circle at 90% 80%, rgba(34,197,94,0.04), transparent 12%),
+          linear-gradient(120deg, #071428 0%, #072a3a 40%, #0b486b 100%);
+        background-size: cover, 180% 180%, 220% 220%, 400% 400%;
+        background-position: center, 0% 0%, 100% 100%, 50% 50%;
+        background-repeat: no-repeat;
+        filter: blur(10px) saturate(120%);
+        mix-blend-mode: normal;
+        transition: opacity 300ms ease;
+        opacity: 0.98;
+        animation: pageBgShift 18s ease-in-out infinite;
+      }
+      @keyframes pageBgShift{
+        0%{ background-position: 0% 10%, 100% 90%, 40% 60%; }
+        50%{ background-position: 30% 40%, 70% 60%, 60% 40%; }
+        100%{ background-position: 0% 10%, 100% 90%, 40% 60%; }
+      }
+      @media (prefers-reduced-motion: reduce){
+        #page-bg{ animation: none; filter: blur(6px); }
+        #bg-stars, #bg-particles { display: none !important; }
+      }
+
+      /* Canvas layers for animated elements */
+      #bg-stars, #bg-particles{
+        position:fixed;
+        inset:0;
+        width:100%;
+        height:100%;
+        z-index:-1; /* above page-bg but below UI */
+        pointer-events:none;
+        display:block;
+      }
       #sidebar {
         width: 300px;
         height: 100%;
-        background: #ffffff;
-        border-right: 1px solid #e0e0e0;
+        position: relative;
         display: flex;
         flex-direction: column;
-        overflow-y: auto;
-        box-shadow: 4px 0 15px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+        /* stronger glass effect: more transparent, blurred backdrop */
+        background: rgba(255,255,255,0.36);
+        -webkit-backdrop-filter: blur(10px) saturate(140%);
+        backdrop-filter: blur(10px) saturate(140%);
+        border-right: 1px solid rgba(255,255,255,0.14);
+        box-shadow: 0 8px 32px rgba(16,24,40,0.06);
         z-index: 1000;
+      }
+      /* Keep sidebar content above animated background */
+      #sidebar > * {
+        position: relative;
+        z-index: 2;
+      }
+
+      /* Animated, interactive background layer (separate element) */
+      #sidebar .sidebar-bg {
+        position: absolute;
+        inset: -20% -10% -20% -10%;
+        z-index: 0;
+        pointer-events: none;
+        filter: blur(36px) saturate(120%);
+        background-repeat: no-repeat;
+        background-size: 120% 120%, 140% 140%, 110% 110%, 200% 200%;
+        background-position: calc(var(--mouse-x, 50%)) calc(var(--mouse-y, 50%)), 20% 80%, 80% 20%, 0% 50%;
+        background-image:
+          radial-gradient(640px 320px at 10% 20%, rgba(0,123,255,0.14), transparent 18%),
+          radial-gradient(520px 280px at 90% 80%, rgba(34,197,94,0.12), transparent 18%),
+          radial-gradient(440px 220px at 60% 30%, rgba(99,102,241,0.12), transparent 18%),
+          linear-gradient(120deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00) 10%, rgba(255,255,255,0.02));
+        transform: translate(var(--blob-translate, 0px));
+        transition: background-position 0.08s linear, transform 0.12s linear;
+        mix-blend-mode: screen;
+        animation: flow 12s ease-in-out infinite;
+      }
+
+      /* flowing sheen overlay to create fluid movement */
+      @keyframes flow {
+        0% { background-position: calc(var(--mouse-x, 50%)) calc(var(--mouse-y, 50%)), 20% 80%, 80% 20%, 0% 50%; }
+        50% { background-position: calc(var(--mouse-x, 60%)) calc(var(--mouse-y, 40%)), 30% 70%, 70% 30%, 100% 50%; }
+        100% { background-position: calc(var(--mouse-x, 50%)) calc(var(--mouse-y, 50%)), 20% 80%, 80% 20%, 0% 50%; }
+      }
+
+      /* Subtle overlay to keep text readable */
+      #sidebar::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.28));
+        mix-blend-mode: normal;
+      }
+
+      /* Reduced-motion fallback */
+      @media (prefers-reduced-motion: reduce) {
+        #sidebar .sidebar-bg { filter: none; animation: none; background-image: none; }
       }
       #map {
         flex-grow: 1;
@@ -57,7 +146,7 @@
       }
       .sidebar-section {
         padding: 20px 15px;
-        border-bottom: 1px solid #f0f0f0;
+        border-bottom: none; /* remove visual segmentation */
       }
       .sidebar-section h3 {
         margin: 0 0 15px 0;
@@ -71,7 +160,7 @@
       .control-container {
         background: #fdfdfd;
         border-radius: 8px;
-        border: 1px solid #ebebeb;
+        border: none; /* make controls blend into sidebar */
         overflow: hidden;
       }
       /* SEAMLESS INTEGRATION - Blend into sidebar base */
@@ -99,7 +188,7 @@
         display: none !important;
       }
       .leaflet-layerstree-node {
-        padding: 10px 0 !important; /* Vertical padding only */
+        padding: 6px 8px !important; /* Reduced vertical padding for compactness */
         margin: 0 !important;
         border-radius: 0;
         transition: all 0.2s ease;
@@ -108,7 +197,7 @@
         align-items: center;
         width: 100% !important;
         box-sizing: border-box;
-        border-bottom: 1px solid #f5f5f5; /* Subtle divider instead of box border */
+        border-bottom: none; /* remove subtle divider */
       }
       .leaflet-layerstree-node:hover {
         background: #fdfdfd;
@@ -132,7 +221,7 @@
         margin-left: 10px !important;
         white-space: normal !important; /* Allow wrapping */
         word-break: break-all !important; /* Break long words */
-        max-width: 160px; /* Limit width to leave room for trash and picker */
+        max-width: 220px !important; /* Slightly larger width so names are visible */
         line-height: 1.4;
         padding: 4px 0;
       }
@@ -165,8 +254,8 @@
       /* Custom Checkbox and Radio - ABSOLUTE START */
       .leaflet-control-layers input[type="checkbox"],
       .leaflet-control-layers input[type="radio"] {
-        appearance: none;
         -webkit-appearance: none;
+        appearance: none;
         width: 18px;
         height: 18px;
         border: 2px solid #0078a8;
@@ -214,11 +303,83 @@
       /* Dynamic Layer Removal UI */
       .layer-row-container {
         display: flex;
-        align-items: center; /* Center items vertically */
+        flex-direction: column;
+        gap: 6px;
         width: 100%;
-        justify-content: space-between;
         overflow: hidden;
-        padding-right: 5px;
+        padding-right: 2px;
+      }
+      .layer-label-top {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        width:100%;
+      }
+      .layer-controls {
+        display:flex;
+        align-items:center;
+        gap:8px;
+      }
+      /* Styled range (slider) */
+      .layer-controls input[type="range"]{
+        width:120px;
+        height: 10px;
+        -webkit-appearance: none;
+        appearance: none;
+        background: linear-gradient(90deg, var(--track-color, #0078a8) 50%, #e6e6e6 50%);
+        border-radius: 8px;
+        outline: none;
+        padding: 0;
+        margin: 0 6px 0 0;
+        vertical-align: middle;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+        transition: box-shadow 160ms ease, background 160ms ease;
+      }
+      .layer-controls input[type="range"]:focus{ box-shadow: inset 0 1px 3px rgba(0,0,0,0.08), 0 0 0 4px rgba(0,120,168,0.06); }
+      .layer-controls input[type="range"]::-webkit-slider-runnable-track{
+        height: 10px;
+        border-radius: 8px;
+      }
+      .layer-controls input[type="range"]::-webkit-slider-thumb{
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: linear-gradient(180deg,#fff,#f5f7fb);
+        border: 3px solid var(--thumb-border, rgba(0,0,0,0.12));
+        box-shadow: 0 2px 6px rgba(16,24,40,0.12);
+        margin-top: -4px; /* center thumb visually */
+      }
+      .layer-controls input[type="range"]::-moz-range-track{
+        height: 10px;
+        border-radius: 8px;
+        background: transparent;
+      }
+      .layer-controls input[type="range"]::-moz-range-thumb{
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: linear-gradient(180deg,#fff,#f5f7fb);
+        border: 3px solid var(--thumb-border, rgba(0,0,0,0.12));
+        box-shadow: 0 2px 6px rgba(16,24,40,0.12);
+      }
+      /* Compact, styled number input (smaller width as requested) */
+      .layer-controls input[type="number"]{
+        width:34px;
+        padding:2px 4px;
+        border-radius:8px;
+        border:1px solid #e0e5ea;
+        background: linear-gradient(180deg,#ffffff,#f7fbff);
+        text-align:center;
+        font-weight:700;
+        vertical-align: middle;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(16,24,40,0.04);
+        transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      }
+      .layer-controls input[type="number"]:focus{
+        transform: translateY(-1px);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 14px rgba(7,90,120,0.08);
       }
       .layer-label-group {
         display: flex;
@@ -340,14 +501,74 @@
         text-align: center;
         font-style: italic;
       }
+      /* Liquid glass animated background for control panel (no text added) */
+      #layers-control .leaflet-control-layers {
+        position: relative;
+        overflow: visible;
+        background: transparent !important;
+      }
+      #layers-control .leaflet-control-layers::before {
+        content: "";
+        position: absolute;
+        inset: 6px 6px 6px 6px;
+        border-radius: 12px;
+        z-index: 0;
+        pointer-events: none;
+        -webkit-filter: blur(6px);
+        filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px) saturate(140%);
+        backdrop-filter: blur(6px) saturate(140%);
+        background:
+          radial-gradient(600px 200px at 10% 20%, rgba(255,255,255,0.18), transparent 20%),
+          radial-gradient(500px 180px at 90% 80%, rgba(255,255,255,0.10), transparent 20%),
+          linear-gradient(90deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+        mix-blend-mode: overlay;
+        animation: liquid-move 8s linear infinite;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.18) inset;
+        opacity: 0.96;
+      }
+      #layers-control .leaflet-control-layers::after {
+        content: "";
+        position: absolute;
+        inset: 6px 6px 6px 6px;
+        border-radius: 12px;
+        z-index: 1;
+        pointer-events: none;
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01));
+        opacity: 0.95;
+      }
+      /* Ensure layer nodes render above the animated background */
+      #layers-control .leaflet-control-layers .leaflet-layerstree-node,
+      #layers-control .leaflet-control-layers .leaflet-layerstree-header {
+        position: relative;
+        z-index: 2;
+      }
+      @keyframes liquid-move {
+        0% {
+          background-position: 0% 0%, 100% 100%, 0% 0%;
+          transform: rotate(0deg);
+        }
+        50% {
+          background-position: 50% 30%, 50% 70%, 100% 100%;
+          transform: rotate(3deg);
+        }
+        100% {
+          background-position: 0% 0%, 100% 100%, 0% 0%;
+          transform: rotate(0deg);
+        }
+      }
     </style>
-    <title></title>
+    <title>Manhole Locations — Interactive Map</title>
   </head>
 
   <body>
+    <div id="page-bg" aria-hidden="true"></div>
+    <canvas id="bg-stars" aria-hidden="true"></canvas>
+    <canvas id="bg-particles" aria-hidden="true"></canvas>
     <button id="sidebar-toggle"><i class="fas fa-bars"></i> Menu</button>
     <div id="main-container">
       <div id="sidebar">
+        <div class="sidebar-bg" aria-hidden="true"></div>
         <div class="sidebar-header">
           <h2>Manhole Locations</h2>
         </div>
@@ -411,6 +632,10 @@
       ];
       var colorIndex = 0;
 
+      // Defaults for manhole points (hex color and radius)
+      var defaultManholeColor = '#b7484b';
+      var defaultManholeRadius = 7; // default size set to 7
+
       // Global function to change dynamic layer color
       window.changeLayerColor = function (layerId, newColor) {
         var targetLayer = null;
@@ -421,9 +646,86 @@
           }
         }
         if (targetLayer) {
-          targetLayer.setStyle({
-            fillColor: newColor,
-          });
+          // For GeoJSON layers with circleMarkers we should update style per feature
+          try {
+            targetLayer.eachLayer(function (l) {
+              if (l.setStyle) {
+                l.setStyle({ fillColor: newColor, color: l.options && l.options.color ? l.options.color : '#000' });
+              }
+            });
+          } catch (err) {
+            // fallback to setStyle on layer
+            if (typeof targetLayer.setStyle === 'function') {
+              targetLayer.setStyle({ fillColor: newColor });
+            }
+          }
+        }
+        // also update the UI slider/number visuals to match the color picker
+        try { setSliderColorForLayer(layerId, newColor); } catch(e){}
+      };
+
+      // Helper: sync UI slider/number visuals with layer color
+      function setSliderColorForLayer(layerId, color) {
+        try {
+          var rid = document.getElementById(layerId + '_range');
+          var nid = document.getElementById(layerId + '_number');
+          if (rid) {
+            // determine percent filled from min/max/value
+            var min = parseFloat(rid.min) || 2;
+            var max = parseFloat(rid.max) || 30;
+            var val = parseFloat(rid.value) || min;
+            var pct = Math.round(((val - min) / (max - min)) * 100);
+            rid.style.background = 'linear-gradient(90deg, ' + color + ' ' + pct + '%, #e6e6e6 ' + pct + '%)';
+            // also set CSS custom property for thumb border (used in CSS)
+            rid.style.setProperty('--thumb-border', color);
+            // ensure live update when user drags
+            if (!rid._styledListener) {
+                rid.addEventListener('input', function(){
+                var v = parseFloat(this.value);
+                var p = Math.round(((v - min) / (max - min)) * 100);
+                var cp = color;
+                // try to pick color from related color picker if present
+                var cpElem = document.getElementById(layerId + '_color');
+                if (cpElem) cp = cpElem.value;
+                this.style.background = 'linear-gradient(90deg, ' + cp + ' ' + p + '%, #e6e6e6 ' + p + '%)';
+                this.style.setProperty('--thumb-border', cp);
+                var num = document.getElementById(layerId + '_number');
+                if (num) num.value = this.value;
+              });
+              rid._styledListener = true;
+            }
+          }
+          if (nid) {
+            nid.style.borderColor = color;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // Global function to change marker radius/size
+      window.changeLayerSize = function (layerId, newSize) {
+        var targetLayer = null;
+        for (var j = 0; j < overlaysTree.length; j++) {
+          if (overlaysTree[j].id === layerId) {
+            targetLayer = overlaysTree[j].layer;
+            break;
+          }
+        }
+        if (targetLayer) {
+          try {
+            targetLayer.eachLayer(function (l) {
+              if (typeof l.setRadius === 'function') {
+                l.setRadius(Number(newSize));
+              } else if (l.setStyle) {
+                l.setStyle({ radius: Number(newSize) });
+              }
+            });
+          } catch (err) {
+            if (typeof targetLayer.setStyle === 'function') {
+              targetLayer.setStyle({ radius: Number(newSize) });
+            }
+          }
         }
       };
 
@@ -439,7 +741,7 @@
       });
       var hash = new L.Hash(map);
       map.attributionControl.setPrefix(
-        '<a href="https://github.com/AFurqanHassan" target="_blank">Ahmad Furqan Hassan</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>'
+        '<a href="https://github.com/AFurqanHassan" target="_blank">Ahmad Furqan Hassan</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">WASA SKP</a> &middot; <a href="https://qgis.org">QGIS</a>'
       );
       var autolinker = new Autolinker({
         truncate: { length: 30, location: "smart" },
@@ -637,7 +939,7 @@
       function style_ManholeCovers_1_0() {
         return {
           pane: "pane_ManholeCovers_1",
-          radius: 9.2,
+          radius: defaultManholeRadius,
           opacity: 1,
           color: "rgba(35,35,35,1.0)",
           dashArray: "",
@@ -646,7 +948,7 @@
           weight: 1,
           fill: true,
           fillOpacity: 1,
-          fillColor: "rgba(183,72,75,1.0)",
+          fillColor: defaultManholeColor,
           interactive: true,
         };
       }
@@ -782,7 +1084,22 @@
           layer: layer_MCSKPZones_2,
         },
         {
-          label: '<img src="legend/ManholeCovers_1.png" /> Manhole Covers',
+          id: 'ManholeCovers_1',
+          label: '<div class="layer-row-container">' +
+                   '<div class="layer-label-top">' +
+                     '<div class="layer-label-group">' +
+                       '<span class="leaflet-layerstree-header-name">Manhole Covers</span>' +
+                     '</div>' +
+                     '<i class="fas fa-trash-alt remove-layer-btn" style="visibility:hidden"></i>' +
+                   '</div>' +
+                   '<div class="layer-controls">' +
+                     '<div class="layer-color-picker-wrapper">' +
+                       '<input type="color" id="ManholeCovers_1_color" class="layer-color-picker" value="' + defaultManholeColor + '" onchange="changeLayerColor(\'ManholeCovers_1\', this.value)" title="Change Layer Color">' +
+                     '</div>' +
+                     '<input type="range" id="ManholeCovers_1_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'ManholeCovers_1_number\').value=this.value" onchange="changeLayerSize(\'ManholeCovers_1\', this.value)" title="Change Marker Size">' +
+                     '<input type="number" id="ManholeCovers_1_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'ManholeCovers_1\', this.value); document.getElementById(\'ManholeCovers_1_range\').value=this.value">' +
+                   '</div>' +
+                 '</div>',
           layer: layer_ManholeCovers_1,
         },
         { label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: "bm" },
@@ -793,6 +1110,17 @@
       lay.addTo(map);
       // Move layers control to sidebar
       document.getElementById("layers-control").appendChild(lay.getContainer());
+      // initialize slider visuals to match color pickers (small delay while DOM builds)
+      setTimeout(function(){
+        try{
+          setSliderColorForLayer('ManholeCovers_1', defaultManholeColor);
+          document.querySelectorAll('.layer-color-picker').forEach(function(cp){
+            if (!cp.id) return;
+            var lid = cp.id.replace('_color','');
+            setSliderColorForLayer(lid, cp.value);
+          });
+        }catch(e){}
+      }, 60);
       // Sidebar Toggle Logic
       document
         .getElementById("sidebar-toggle")
@@ -818,16 +1146,10 @@
             count + " images selected";
         });
 
-      document.addEventListener("DOMContentLoaded", function () {
-        // Sidebar logic: Remove old layer control toggle behavior if not needed
-        // But keep it for reference or remove if purely sidebar based
-      });
       // Global function for dynamic layer removal
       window.removeDynamicLayer = function (layerId) {
-        // Find the layer in overlaysTree
         var index = -1;
         var targetLayer = null;
-
         for (var j = 0; j < overlaysTree.length; j++) {
           if (overlaysTree[j].id === layerId) {
             index = j;
@@ -837,16 +1159,10 @@
         }
 
         if (index > -1) {
-          // Remove from map
           if (targetLayer) map.removeLayer(targetLayer);
-
-          // Remove from local collection
           overlaysTree.splice(index, 1);
-
-          // Refresh Sidebar
           if (lay) {
             lay.setOverlayTree(overlaysTree);
-            // Re-hide toggle icons
             var toggles = document.querySelectorAll(
               ".leaflet-control-layers-toggle"
             );
@@ -973,7 +1289,7 @@
                 onEachFeature: pop_ManholeCovers_1,
                 pointToLayer: function (feature, latlng) {
                   return L.circleMarker(latlng, {
-                    radius: 8,
+                    radius: 7,
                     fillColor: defaultColor,
                     color: "#000",
                     weight: 1,
@@ -992,23 +1308,20 @@
                 var uniqueId = "dyn_" + Date.now();
                 var labelHTML =
                   '<div class="layer-row-container">' +
-                  '<div class="layer-label-group">' +
-                  '<div class="layer-color-picker-wrapper">' +
-                  '<input type="color" class="layer-color-picker" value="' +
-                  defaultColor +
-                  '" ' +
-                  "onchange=\"changeLayerColor('" +
-                  uniqueId +
-                  '\', this.value)" title="Change Layer Color">' +
-                  "</div>" +
-                  '<span class="leaflet-layerstree-header-name">' +
-                  fileName +
-                  "</span>" +
-                  "</div>" +
-                  '<i class="fas fa-trash-alt remove-layer-btn" onclick="removeDynamicLayer(\'' +
-                  uniqueId +
-                  '\'); event.stopPropagation();" title="Remove Layer"></i>' +
-                  "</div>";
+                    '<div class="layer-label-top">' +
+                      '<div class="layer-label-group">' +
+                        '<span class="leaflet-layerstree-header-name">' + fileName + '</span>' +
+                      '</div>' +
+                      '<i class="fas fa-trash-alt remove-layer-btn" onclick="removeDynamicLayer(\'' + uniqueId + '\'); event.stopPropagation();" title="Remove Layer"></i>' +
+                    '</div>' +
+                    '<div class="layer-controls">' +
+                      '<div class="layer-color-picker-wrapper">' +
+                        '<input type="color" class="layer-color-picker" id="' + uniqueId + '_color" value="' + defaultColor + '" onchange="changeLayerColor(\'' + uniqueId + '\', this.value)" title="Change Layer Color">' +
+                      '</div>' +
+                      '<input type="range" id="' + uniqueId + '_range" min="2" max="30" step="0.5" value="7" oninput="document.getElementById(\'' + uniqueId + '_number\').value=this.value" onchange="changeLayerSize(\'' + uniqueId + '\', this.value)" title="Change Marker Size">' +
+                      '<input type="number" id="' + uniqueId + '_number" min="2" max="30" step="0.5" value="7" onchange="changeLayerSize(\'' + uniqueId + '\', this.value); document.getElementById(\'' + uniqueId + '_range\').value=this.value">' +
+                    '</div>' +
+                  '</div>';
 
                 overlaysTree.push({
                   id: uniqueId,
@@ -1025,6 +1338,8 @@
                 toggles.forEach(function (t) {
                   t.style.display = "none";
                 });
+                // initialize slider visuals for this new layer
+                setTimeout(function(){ try{ setSliderColorForLayer(uniqueId, defaultColor); }catch(e){} }, 30);
               }
 
               status.innerHTML = "Loaded " + features.length + " points.";
@@ -1034,6 +1349,151 @@
           };
           reader.readAsText(csvInput.files[0]);
         });
+      // Debug: indicate script loaded and map objects created
+      if (typeof map !== 'undefined') {
+        map.whenReady(function(){ console.log('Map initialized (whenReady)'); });
+      } else {
+        console.log('Map object not defined at end of script');
+      }
+    </script>
+    <script>
+      (function(){
+        // Respect reduced motion
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        var sidebar = document.getElementById('sidebar');
+        if (!sidebar) return;
+
+        // Initialize variables so CSS has defaults
+        sidebar.style.setProperty('--mouse-x', '50%');
+        sidebar.style.setProperty('--mouse-y', '50%');
+
+        function onMove(e){
+          var ev = e.touches && e.touches[0] ? e.touches[0] : e;
+          var rect = sidebar.getBoundingClientRect();
+          var x = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+          var y = Math.max(0, Math.min(1, (ev.clientY - rect.top) / rect.height));
+          sidebar.style.setProperty('--mouse-x', (x*100).toFixed(2) + '%');
+          sidebar.style.setProperty('--mouse-y', (y*100).toFixed(2) + '%');
+          // Slight parallax transform for the blob layer
+          var px = (x - 0.5) * 12; // px movement range
+          var py = (y - 0.5) * 8;
+          sidebar.style.setProperty('--blob-translate', px + 'px ' + py + 'px');
+        }
+
+        sidebar.addEventListener('mousemove', onMove);
+        sidebar.addEventListener('touchmove', onMove, {passive:true});
+        sidebar.addEventListener('mouseleave', function(){
+          sidebar.style.setProperty('--mouse-x', '50%');
+          sidebar.style.setProperty('--mouse-y', '50%');
+          sidebar.style.setProperty('--blob-translate', '0px 0px');
+        });
+      })();
+    </script>
+    <script>
+      // Background starfield + subtle particles
+      (function(){
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+        var starsCanvas = document.getElementById('bg-stars');
+        var partCanvas = document.getElementById('bg-particles');
+        if (!starsCanvas || !partCanvas) return;
+
+        var sctx = starsCanvas.getContext('2d');
+        var pctx = partCanvas.getContext('2d');
+
+        var DPR = Math.max(1, window.devicePixelRatio || 1);
+        function resize(){
+          var w = window.innerWidth;
+          var h = window.innerHeight;
+          starsCanvas.width = w * DPR; starsCanvas.height = h * DPR;
+          starsCanvas.style.width = w + 'px'; starsCanvas.style.height = h + 'px';
+          partCanvas.width = w * DPR; partCanvas.height = h * DPR;
+          partCanvas.style.width = w + 'px'; partCanvas.style.height = h + 'px';
+          sctx.setTransform(DPR,0,0,DPR,0,0);
+          pctx.setTransform(DPR,0,0,DPR,0,0);
+        }
+
+        var stars = [];
+        function initStars(){
+          stars = [];
+          var area = window.innerWidth * window.innerHeight;
+          var count = Math.round(Math.min(800, Math.max(80, area / 8000)));
+          for(var i=0;i<count;i++){
+            stars.push({
+              x: Math.random()*window.innerWidth,
+              y: Math.random()*window.innerHeight*0.7, // mostly upper
+              r: Math.random()*1.6 + 0.2,
+              alpha: Math.random()*0.9 + 0.1,
+              phase: Math.random()*Math.PI*2,
+              speed: Math.random()*0.004 + 0.002
+            });
+          }
+        }
+
+        var particles = [];
+        function initParticles(){
+          particles = [];
+          for(var i=0;i<20;i++){
+            particles.push({
+              x: Math.random()*window.innerWidth,
+              y: window.innerHeight*0.65 + Math.random()*window.innerHeight*0.3,
+              vx: (Math.random()*0.6-0.3),
+              vy: (Math.random()*0.2-0.1),
+              r: Math.random()*3+1,
+              alpha: Math.random()*0.6+0.15
+            });
+          }
+        }
+
+        function draw(now){
+          sctx.clearRect(0,0,window.innerWidth,window.innerHeight);
+          pctx.clearRect(0,0,window.innerWidth,window.innerHeight);
+
+          // stars
+          for(var i=0;i<stars.length;i++){
+            var st = stars[i];
+            st.phase += st.speed * 1.5;
+            var a = st.alpha * (0.6 + 0.4 * Math.sin(st.phase));
+            sctx.beginPath();
+            sctx.fillStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')';
+            sctx.arc(st.x, st.y, st.r, 0, Math.PI*2);
+            sctx.fill();
+          }
+
+          // subtle moving lights on horizon/water
+          for(var j=0;j<particles.length;j++){
+            var p = particles[j];
+            p.x += p.vx;
+            p.y += Math.sin((now/1000 + j) * 0.5) * 0.2 + p.vy;
+            if(p.x < -50) p.x = window.innerWidth + 50;
+            if(p.x > window.innerWidth + 50) p.x = -50;
+            if(p.y < window.innerHeight*0.6) p.y = window.innerHeight*0.6 + Math.random()*50;
+            pctx.beginPath();
+            pctx.fillStyle = 'rgba(180,230,255,' + (p.alpha * 0.9).toFixed(2) + ')';
+            pctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+            pctx.fill();
+            // reflection blur under
+            pctx.beginPath();
+            pctx.fillStyle = 'rgba(180,230,255,' + (p.alpha*0.08).toFixed(3) + ')';
+            pctx.ellipse(p.x, p.y + 10, p.r*2.4, p.r*0.8, 0, 0, Math.PI*2);
+            pctx.fill();
+          }
+
+          requestAnimationFrame(draw);
+        }
+
+        function start(){
+          resize();
+          initStars();
+          initParticles();
+          requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', function(){ resize(); initStars(); initParticles(); });
+        // start after small delay so layout stabilizes
+        setTimeout(start, 80);
+      })();
     </script>
   </body>
 </html>
