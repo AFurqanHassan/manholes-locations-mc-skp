@@ -83,32 +83,16 @@
         z-index: 2;
       }
 
-      /* Animated, interactive background layer (separate element) */
-      #sidebar .sidebar-bg {
+      /* 3D Animated Canvas Background */
+      #sidebar-canvas {
         position: absolute;
-        inset: -20% -10% -20% -10%;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
         z-index: 0;
         pointer-events: none;
-        filter: blur(36px) saturate(120%);
-        background-repeat: no-repeat;
-        background-size: 120% 120%, 140% 140%, 110% 110%, 200% 200%;
-        background-position: calc(var(--mouse-x, 50%)) calc(var(--mouse-y, 50%)), 20% 80%, 80% 20%, 0% 50%;
-        background-image:
-          radial-gradient(640px 320px at 10% 20%, rgba(0,123,255,0.14), transparent 18%),
-          radial-gradient(520px 280px at 90% 80%, rgba(34,197,94,0.12), transparent 18%),
-          radial-gradient(440px 220px at 60% 30%, rgba(99,102,241,0.12), transparent 18%),
-          linear-gradient(120deg, rgba(255,255,255,0.02), rgba(255,255,255,0.00) 10%, rgba(255,255,255,0.02));
-        transform: translate(var(--blob-translate, 0px));
-        transition: background-position 0.08s linear, transform 0.12s linear;
-        mix-blend-mode: screen;
-        animation: flow 12s ease-in-out infinite;
-      }
-
-      /* flowing sheen overlay to create fluid movement */
-      @keyframes flow {
-        0% { background-position: calc(var(--mouse-x, 50%)) calc(var(--mouse-y, 50%)), 20% 80%, 80% 20%, 0% 50%; }
-        50% { background-position: calc(var(--mouse-x, 60%)) calc(var(--mouse-y, 40%)), 30% 70%, 70% 30%, 100% 50%; }
-        100% { background-position: calc(var(--mouse-x, 50%)) calc(var(--mouse-y, 50%)), 20% 80%, 80% 20%, 0% 50%; }
+        opacity: 0.75;
       }
 
       /* Subtle overlay to keep text readable */
@@ -118,13 +102,13 @@
         inset: 0;
         z-index: 1;
         pointer-events: none;
-        background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.28));
+        background: linear-gradient(180deg, rgba(255,255,255,0.45), rgba(255,255,255,0.15));
         mix-blend-mode: normal;
       }
 
       /* Reduced-motion fallback */
       @media (prefers-reduced-motion: reduce) {
-        #sidebar .sidebar-bg { filter: none; animation: none; background-image: none; }
+        #sidebar-canvas { display: none !important; }
       }
       #map {
         flex-grow: 1;
@@ -599,7 +583,7 @@
     <button id="sidebar-toggle"><i class="fas fa-bars"></i> Menu</button>
     <div id="main-container">
       <div id="sidebar">
-        <div class="sidebar-bg" aria-hidden="true"></div>
+        <canvas id="sidebar-canvas" aria-hidden="true"></canvas>
         <div class="sidebar-header">
           <h2>Manhole Locations</h2>
         </div>
@@ -1524,6 +1508,150 @@
         window.addEventListener('resize', function(){ resize(); initStars(); initParticles(); });
         // start after small delay so layout stabilizes
         setTimeout(start, 80);
+      })();
+    </script>
+    <script>
+      // Sidebar Particle Animation
+      (function() {
+        const canvas = document.getElementById('sidebar-canvas');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let particles = [];
+        let animationId;
+        let mouse = { x: null, y: null, radius: 100 };
+        
+        const config = {
+          count: 350,
+          minRadius: 0.5,
+          maxRadius: 2.5,
+          minSpeed: 0.2,
+          maxSpeed: 0.6,
+          color: 'rgba(255, 255, 255, '
+        };
+        
+        class Particle {
+          constructor() {
+            this.init();
+          }
+          
+          init() {
+            this.x = Math.random() * width;
+            this.y = Math.random() * height;
+            this.radius = config.minRadius + Math.random() * (config.maxRadius - config.minRadius);
+            this.vx = (Math.random() - 0.5) * config.maxSpeed;
+            this.vy = (Math.random() - 0.5) * config.maxSpeed;
+            this.alpha = 0.2 + Math.random() * 0.5;
+            this.baseAlpha = this.alpha;
+            this.phase = Math.random() * Math.PI * 2;
+          }
+          
+          update() {
+            this.x += this.vx;
+            this.y += this.vy;
+            
+            // Floating effect
+            this.x += Math.sin(Date.now() * 0.001 + this.phase) * 0.1;
+            this.y += Math.cos(Date.now() * 0.0008 + this.phase) * 0.1;
+            
+            // Mouse interaction
+            if (mouse.x !== null && mouse.y !== null) {
+              const dx = mouse.x - this.x;
+              const dy = mouse.y - this.y;
+              const dist = Math.sqrt(dx*dx + dy*dy);
+              
+              if (dist < mouse.radius) {
+                const force = (mouse.radius - dist) / mouse.radius;
+                this.x -= dx * force * 0.03;
+                this.y -= dy * force * 0.03;
+                this.alpha = Math.min(1, this.baseAlpha + force * 0.5);
+              } else {
+                this.alpha = this.baseAlpha;
+              }
+            } else {
+              this.alpha = this.baseAlpha;
+            }
+            
+            // Bounds check with wrap-around
+            if (this.x < -10) this.x = width + 10;
+            if (this.x > width + 10) this.x = -10;
+            if (this.y < -10) this.y = height + 10;
+            if (this.y > height + 10) this.y = -10;
+          }
+          
+          draw() {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = config.color + this.alpha + ')';
+            ctx.fill();
+            
+            // Tiny glow for larger particles
+            if (this.radius > 1.5) {
+              ctx.shadowBlur = 4;
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.4)';
+            } else {
+              ctx.shadowBlur = 0;
+            }
+          }
+        }
+        
+        function resize() {
+          const rect = canvas.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          canvas.width = rect.width * window.devicePixelRatio;
+          canvas.height = rect.height * window.devicePixelRatio;
+          ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+          width = rect.width;
+          height = rect.height;
+        }
+        
+        function init() {
+          resize();
+          particles = [];
+          for (let i = 0; i < config.count; i++) {
+            particles.push(new Particle());
+          }
+        }
+        
+        function animate() {
+          ctx.clearRect(0, 0, width, height);
+          
+          particles.forEach(p => {
+            p.update();
+            p.draw();
+          });
+          
+          animationId = requestAnimationFrame(animate);
+        }
+        
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+          sidebar.addEventListener('mousemove', (e) => {
+            const rect = sidebar.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+          });
+          
+          sidebar.addEventListener('mouseleave', () => {
+            mouse.x = null;
+            mouse.y = null;
+          });
+        }
+        
+        window.addEventListener('resize', () => {
+          resize();
+          // Redistribution happens on init, but we can just keep them moving
+        });
+        
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          init();
+          animate();
+        }
+        
+        window.addEventListener('beforeunload', () => {
+          if (animationId) cancelAnimationFrame(animationId);
+        });
       })();
     </script>
   </body>
