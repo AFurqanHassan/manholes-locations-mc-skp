@@ -649,7 +649,7 @@
 
       // Defaults for manhole points (hex color and radius)
       var defaultManholeColor = '#b7484b';
-      var defaultManholeRadius = 7; // default size set to 7
+      var defaultManholeRadius = 5; // default size set to 7
 
       // Global function to change dynamic layer color
       window.changeLayerColor = function (layerId, newColor) {
@@ -1103,7 +1103,7 @@
           label: '<div class="layer-row-container">' +
                    '<div class="layer-label-top">' +
                      '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name">Manhole Covers</span>' +
+                       '<span class="leaflet-layerstree-header-name">Manhole Covers (' + json_ManholeCovers_1.features.length + ')</span>' +
                      '</div>' +
                      '<i class="fas fa-trash-alt remove-layer-btn" style="visibility:hidden"></i>' +
                    '</div>' +
@@ -1324,7 +1324,7 @@
                   '<div class="layer-row-container">' +
                     '<div class="layer-label-top">' +
                       '<div class="layer-label-group">' +
-                        '<span class="leaflet-layerstree-header-name">' + fileName + '</span>' +
+                        '<span class="leaflet-layerstree-header-name">' + fileName + ' (' + features.length + ')</span>' +
                       '</div>' +
                       '<i class="fas fa-trash-alt remove-layer-btn" onclick="removeDynamicLayer(\'' + uniqueId + '\'); event.stopPropagation();" title="Remove Layer"></i>' +
                     '</div>' +
