@@ -244,7 +244,7 @@
         height: 18px;
         border: 2px solid #0078a8;
         border-radius: 4px;
-        margin: 0 12px 0 0 !important; /* Zero left margin! */
+        margin: 0 12px 0 10px !important; /* Added left margin */
         position: relative;
         cursor: pointer;
         background: #fff;
@@ -985,8 +985,143 @@
           return L.circleMarker(latlng, style_ManholeCovers_1_0(feature));
         },
       });
-      bounds_group.addLayer(layer_ManholeCovers_1);
-      map.addLayer(layer_ManholeCovers_1);
+
+      // --- Point in Polygon Logic ---
+      function isPointInPolygon(point, vs) {
+        // ray-casting algorithm based on
+        // https://github.com/substack/point-in-polygon
+        var x = point[0], y = point[1];
+        var inside = false;
+        for (var i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+          var xi = vs[i][0], yi = vs[i][1];
+          var xj = vs[j][0], yj = vs[j][1];
+          var intersect = ((yi > y) != (yj > y))
+              && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+
+      function isPointInMultiPolygon(point, multiPolyCoords) {
+        // multiPolyCoords is array of Polygons, where each Polygon is array of rings (first is outer)
+        // We only check the outer ring of each polygon for simplicity in this context
+        // If exact holes support is needed, logic would be more complex
+        for (var k = 0; k < multiPolyCoords.length; k++) {
+          var polygon = multiPolyCoords[k];
+          // polygon[0] is the outer ring
+          if (isPointInPolygon(point, polygon[0])) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // 1. Prepare Boundary Polygons
+      // json_MCSKPZones_2 features are MultiPolygons
+      var boundaryPolygons = [];
+      json_MCSKPZones_2.features.forEach(function(f){
+        if(f.geometry.type === 'MultiPolygon'){
+             f.geometry.coordinates.forEach(function(poly){
+                 boundaryPolygons.push(poly);
+             });
+        } else if(f.geometry.type === 'Polygon'){
+             boundaryPolygons.push(f.geometry.coordinates);
+        }
+      });
+
+      // 2. Split Manhole Features
+      var insideFeatures = [];
+      var outsideFeatures = [];
+      
+      json_ManholeCovers_1.features.forEach(function(feature){
+        var pt = feature.geometry.coordinates; // [lon, lat]
+        var isInside = isPointInMultiPolygon(pt, boundaryPolygons);
+        if(isInside) {
+            insideFeatures.push(feature);
+        } else {
+            outsideFeatures.push(feature);
+        }
+      });
+
+      // 3. Create Layers for Inside/Outside
+      var json_ManholeCovers_Inside = {
+        "type": "FeatureCollection",
+        "name": "ManholeCovers_Inside",
+        "features": insideFeatures
+      };
+      var json_ManholeCovers_Outside = {
+        "type": "FeatureCollection",
+        "name": "ManholeCovers_Outside",
+        "features": outsideFeatures
+      };
+
+      // Style function (reused, but distinct layers allow distinct defaults/overrides if we want)
+      function style_ManholeCovers_Inside() {
+        return {
+          pane: "pane_ManholeCovers_1", // reuse pane or create new
+          radius: defaultManholeRadius,
+          opacity: 1,
+          color: "rgba(35,35,35,1.0)",
+          dashArray: "",
+          lineCap: "butt",
+          lineJoin: "miter",
+          weight: 1,
+          fill: true,
+          fillOpacity: 1,
+          fillColor: defaultManholeColor, // Start with same color
+          interactive: true,
+        };
+      }
+      function style_ManholeCovers_Outside() {
+        return {
+          pane: "pane_ManholeCovers_1", // reuse pane
+          radius: defaultManholeRadius,
+          opacity: 1,
+          color: "rgba(35,35,35,1.0)",
+          dashArray: "",
+          lineCap: "butt",
+          lineJoin: "miter",
+          weight: 1,
+          fill: true,
+          fillOpacity: 1,
+          fillColor: '#FF8800', // Different default color for contrast? or same. Let's use darker.
+          interactive: true,
+        };
+      }
+      
+      // Inside Layer
+      var layer_ManholeCovers_Inside = new L.geoJson(json_ManholeCovers_Inside, {
+        attribution: "",
+        interactive: true,
+        dataVar: "json_ManholeCovers_Inside",
+        layerName: "layer_ManholeCovers_Inside",
+        pane: "pane_ManholeCovers_1",
+        onEachFeature: pop_ManholeCovers_1,
+        pointToLayer: function (feature, latlng) {
+          return L.circleMarker(latlng, style_ManholeCovers_Inside());
+        },
+      });
+      bounds_group.addLayer(layer_ManholeCovers_Inside);
+      map.addLayer(layer_ManholeCovers_Inside);
+
+      // Outside Layer
+      var layer_ManholeCovers_Outside = new L.geoJson(json_ManholeCovers_Outside, {
+        attribution: "",
+        interactive: true,
+        dataVar: "json_ManholeCovers_Outside",
+        layerName: "layer_ManholeCovers_Outside",
+        pane: "pane_ManholeCovers_1",
+        onEachFeature: pop_ManholeCovers_1,
+        pointToLayer: function (feature, latlng) {
+             // Override default color for outside to make them distinct initially
+             var style = style_ManholeCovers_Outside();
+             style.fillColor = '#555555'; // Grey for outside by default
+             return L.circleMarker(latlng, style);
+        },
+      });
+      bounds_group.addLayer(layer_ManholeCovers_Outside);
+      map.addLayer(layer_ManholeCovers_Outside);
+
       function pop_MCSKPZones_2(feature, layer) {
         layer.on({
           mouseout: function (e) {
@@ -1099,23 +1234,46 @@
           layer: layer_MCSKPZones_2,
         },
         {
-          id: 'ManholeCovers_1',
+          label: '<img src="legend/MCSKPZones_2.png" /> MC SKP Zones',
+          layer: layer_MCSKPZones_2,
+        },
+        {
+          id: 'ManholeCovers_Inside',
           label: '<div class="layer-row-container">' +
                    '<div class="layer-label-top">' +
                      '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name">Manhole Covers (' + json_ManholeCovers_1.features.length + ')</span>' +
+                       '<span class="leaflet-layerstree-header-name">Inside Boundary (' + insideFeatures.length + ')</span>' +
                      '</div>' +
                      '<i class="fas fa-trash-alt remove-layer-btn" style="visibility:hidden"></i>' +
                    '</div>' +
                    '<div class="layer-controls">' +
                      '<div class="layer-color-picker-wrapper">' +
-                       '<input type="color" id="ManholeCovers_1_color" class="layer-color-picker" value="' + defaultManholeColor + '" onchange="changeLayerColor(\'ManholeCovers_1\', this.value)" title="Change Layer Color">' +
+                       '<input type="color" id="ManholeCovers_Inside_color" class="layer-color-picker" value="' + defaultManholeColor + '" onchange="changeLayerColor(\'ManholeCovers_Inside\', this.value)" title="Change Layer Color">' +
                      '</div>' +
-                     '<input type="range" id="ManholeCovers_1_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'ManholeCovers_1_number\').value=this.value" onchange="changeLayerSize(\'ManholeCovers_1\', this.value)" title="Change Marker Size">' +
-                     '<input type="number" id="ManholeCovers_1_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'ManholeCovers_1\', this.value); document.getElementById(\'ManholeCovers_1_range\').value=this.value">' +
+                     '<input type="range" id="ManholeCovers_Inside_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'ManholeCovers_Inside_number\').value=this.value" onchange="changeLayerSize(\'ManholeCovers_Inside\', this.value)" title="Change Marker Size">' +
+                     '<input type="number" id="ManholeCovers_Inside_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'ManholeCovers_Inside\', this.value); document.getElementById(\'ManholeCovers_Inside_range\').value=this.value">' +
                    '</div>' +
                  '</div>',
-          layer: layer_ManholeCovers_1,
+          layer: layer_ManholeCovers_Inside,
+        },
+        {
+          id: 'ManholeCovers_Outside',
+          label: '<div class="layer-row-container">' +
+                   '<div class="layer-label-top">' +
+                     '<div class="layer-label-group">' +
+                       '<span class="leaflet-layerstree-header-name">Outside Boundary (' + outsideFeatures.length + ')</span>' +
+                     '</div>' +
+                     '<i class="fas fa-trash-alt remove-layer-btn" style="visibility:hidden"></i>' +
+                   '</div>' +
+                   '<div class="layer-controls">' +
+                     '<div class="layer-color-picker-wrapper">' +
+                       '<input type="color" id="ManholeCovers_Outside_color" class="layer-color-picker" value="#555555" onchange="changeLayerColor(\'ManholeCovers_Outside\', this.value)" title="Change Layer Color">' +
+                     '</div>' +
+                     '<input type="range" id="ManholeCovers_Outside_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'ManholeCovers_Outside_number\').value=this.value" onchange="changeLayerSize(\'ManholeCovers_Outside\', this.value)" title="Change Marker Size">' +
+                     '<input type="number" id="ManholeCovers_Outside_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'ManholeCovers_Outside\', this.value); document.getElementById(\'ManholeCovers_Outside_range\').value=this.value">' +
+                   '</div>' +
+                 '</div>',
+          layer: layer_ManholeCovers_Outside,
         },
         { label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: "bm" },
       ];
@@ -1128,7 +1286,8 @@
       // initialize slider visuals to match color pickers (small delay while DOM builds)
       setTimeout(function(){
         try{
-          setSliderColorForLayer('ManholeCovers_1', defaultManholeColor);
+          setSliderColorForLayer('ManholeCovers_Inside', defaultManholeColor);
+          setSliderColorForLayer('ManholeCovers_Outside', '#555555');
           document.querySelectorAll('.layer-color-picker').forEach(function(cp){
             if (!cp.id) return;
             var lid = cp.id.replace('_color','');
