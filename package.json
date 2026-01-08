@@ -1,0 +1,23 @@
+{
+  "name": "manholes-locations-mc-skp",
+  "version": "1.0.0",
+  "description": "An interactive web map visualizing manhole covers and zones for MC Sheikhupura (SKP). This project was generated using QGIS2Web and customized with modern styling and image integration.",
+  "main": "export_shapefile.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AFurqanHassan/manholes-locations-mc-skp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AFurqanHassan/manholes-locations-mc-skp/issues"
+  },
+  "homepage": "https://github.com/AFurqanHassan/manholes-locations-mc-skp#readme",
+  "dependencies": {
+    "shp-write": "^0.3.2"
+  }
+}

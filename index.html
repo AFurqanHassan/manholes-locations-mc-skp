@@ -1002,14 +1002,42 @@
         return inside;
       }
 
+      // Haversine distance between two [lon, lat] points in meters
+      function haversineDist(a, b) {
+        var R = 6371000; // Earth radius in meters
+        var lat1 = a[1] * Math.PI / 180;
+        var lat2 = b[1] * Math.PI / 180;
+        var dLat = (b[1] - a[1]) * Math.PI / 180;
+        var dLon = (b[0] - a[0]) * Math.PI / 180;
+        var sinDLat = Math.sin(dLat / 2);
+        var sinDLon = Math.sin(dLon / 2);
+        var h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
+        var c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+        return R * c;
+      }
+
+      // Minimum distance from point to any vertex of polygon (approximation)
+      function minDistToPolygon(point, poly) {
+        var min = Infinity;
+        for (var i = 0; i < poly.length; i++) {
+          var d = haversineDist(point, poly[i]);
+          if (d < min) min = d;
+        }
+        return min;
+      }
+
+      // Check point inside polygon or within buffer (in meters)
+      function isPointInPolygonWithBuffer(point, vs, bufferMeters) {
+        if (isPointInPolygon(point, vs)) return true;
+        return minDistToPolygon(point, vs) <= bufferMeters;
+      }
+
+      // MultiPolygon check with 100m buffer
       function isPointInMultiPolygon(point, multiPolyCoords) {
-        // multiPolyCoords is array of Polygons, where each Polygon is array of rings (first is outer)
-        // We only check the outer ring of each polygon for simplicity in this context
-        // If exact holes support is needed, logic would be more complex
+        var bufferMeters = 200; // 200 meters buffer
         for (var k = 0; k < multiPolyCoords.length; k++) {
           var polygon = multiPolyCoords[k];
-          // polygon[0] is the outer ring
-          if (isPointInPolygon(point, polygon[0])) {
+          if (isPointInPolygonWithBuffer(point, polygon[0], bufferMeters)) {
             return true;
           }
         }

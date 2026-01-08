@@ -120,7 +120,7 @@ function main() {
     const dataDir = path.join(__dirname, 'data');
     const manholeFile = path.join(dataDir, 'ManholeCovers_1.js');
     const zonesFile = path.join(dataDir, 'MCSKPZones_2.js');
-    const csvFile = path.join(dataDir, '27_30.csv');
+    const csvFile = path.join(dataDir, '19dec.csv');
 
     console.log('Reading files...');
     const manholeData = readJsWrappedJson(manholeFile);
