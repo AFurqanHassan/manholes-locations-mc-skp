@@ -573,6 +573,49 @@
           background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%;
         }
       }
+      /* Toggle Pills */
+      .toggle-container {
+        display: flex;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50px;
+        padding: 4px;
+        margin: 15px 0;
+        position: relative;
+        cursor: pointer;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(5px);
+      }
+      .toggle-option {
+        flex: 1;
+        padding: 10px 0;
+        text-align: center;
+        color: #fff;
+        font-weight: 600;
+        font-size: 13px;
+        position: relative;
+        z-index: 1;
+        transition: color 0.3s;
+      }
+      .toggle-option.active {
+        color: #fff;
+      }
+      .toggle-slider {
+        position: absolute;
+        width: 50%;
+        height: calc(100% - 8px);
+        background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+        border-radius: 50px;
+        top: 4px;
+        left: 4px;
+        transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
+      }
+      .toggle-container.unique-active .toggle-slider {
+        left: calc(50% - 4px);
+      }
+      .sidebar-group-hidden {
+        display: none !important;
+      }
     </style>
     <title>Manhole Locations — Interactive Map</title>
   </head>
@@ -590,6 +633,11 @@
 
         <div class="sidebar-section">
           <h3>Layers</h3>
+          <div class="toggle-container" id="view-toggle">
+            <div class="toggle-slider"></div>
+            <div class="toggle-option active" data-view="total">Total</div>
+            <div class="toggle-option" data-view="unique">Unique</div>
+          </div>
           <div id="layers-control"></div>
         </div>
 
@@ -634,22 +682,44 @@
     <script src="data/ManholeCovers_1.js"></script>
     <script src="data/MCSKPZones_2.js"></script>
     <script>
-      // Color palette for dynamic layers
-      var colorPalette = [
-        "#28a745",
-        "#007bff",
-        "#e83e8c",
-        "#fd7e14",
-        "#6f42c1",
-        "#20c997",
-        "#ffc107",
-        "#17a2b8",
-      ];
+      // Global variables
+      var map, lay, hash, autolinker, zoomControl, measureControl, bounds_group;
+      var layer_ManholeCovers_Inside, layer_ManholeCovers_Outside, layer_MCSKPZones_2;
+      var overlaysTree = [], labels = [], totalMarkers = 0;
+      
+      // Data arrays & FeatureCollections (Global for accessibility)
+      var totalInside = [], totalOutside = [], uniqueInside = [], uniqueOutside = [];
+      var json_ManholeCovers_Inside, json_ManholeCovers_Outside, json_UniqueInside, json_UniqueOutside;
+      var boundaryPolygons = [], polyBboxes = [], uniqueFeatures = [], coordMap = {};
+      
+      // Defaults for manhole points
+      var defaultManholeColor = '#b7484b';
+      var defaultManholeRadius = 5;
+      var colorPalette = ["#28a745", "#007bff", "#e83e8c", "#fd7e14", "#6f42c1", "#20c997", "#ffc107", "#17a2b8"];
       var colorIndex = 0;
 
-      // Defaults for manhole points (hex color and radius)
-      var defaultManholeColor = '#b7484b';
-      var defaultManholeRadius = 5; // default size set to 7
+      // Color State (Stores user preference per mode)
+      var modeColors = {
+        total: {
+          ManholeCovers_Inside: '#b7484b',
+          ManholeCovers_Outside: '#555555'
+        },
+        unique: {
+          ManholeCovers_Inside: '#00D1FF',
+          ManholeCovers_Outside: '#0084A1'
+        }
+      };
+
+      document.addEventListener('DOMContentLoaded', function() {
+        // All initialization code goes here
+        initApp();
+      });
+
+
+
+      function initApp() {
+        console.log("Initializing App...");
+        try {
 
       // Global function to change dynamic layer color
       window.changeLayerColor = function (layerId, newColor) {
@@ -661,7 +731,6 @@
           }
         }
         if (targetLayer) {
-          // For GeoJSON layers with circleMarkers we should update style per feature
           try {
             targetLayer.eachLayer(function (l) {
               if (l.setStyle) {
@@ -669,14 +738,25 @@
               }
             });
           } catch (err) {
-            // fallback to setStyle on layer
             if (typeof targetLayer.setStyle === 'function') {
               targetLayer.setStyle({ fillColor: newColor });
             }
           }
         }
-        // also update the UI slider/number visuals to match the color picker
-        try { setSliderColorForLayer(layerId, newColor); } catch(e){}
+        
+        // Save to state
+        var toggle = document.getElementById('view-toggle');
+        var currentMode = (toggle && toggle.classList.contains('unique-active')) ? 'unique' : 'total';
+        if (modeColors[currentMode]) {
+          modeColors[currentMode][layerId] = newColor;
+        }
+
+        // also update the UI slider/number/colorpicker visuals
+        try { 
+          setSliderColorForLayer(layerId, newColor); 
+          var cpElem = document.getElementById(layerId + '_color');
+          if (cpElem) cpElem.value = newColor;
+        } catch(e){}
       };
 
       // Helper: sync UI slider/number visuals with layer color
@@ -685,21 +765,14 @@
           var rid = document.getElementById(layerId + '_range');
           var nid = document.getElementById(layerId + '_number');
           if (rid) {
-            // determine percent filled from min/max/value
-            var min = parseFloat(rid.min) || 2;
-            var max = parseFloat(rid.max) || 30;
+            var min = parseFloat(rid.min) || 2, max = parseFloat(rid.max) || 30;
             var val = parseFloat(rid.value) || min;
             var pct = Math.round(((val - min) / (max - min)) * 100);
             rid.style.background = 'linear-gradient(90deg, ' + color + ' ' + pct + '%, #e6e6e6 ' + pct + '%)';
-            // also set CSS custom property for thumb border (used in CSS)
             rid.style.setProperty('--thumb-border', color);
-            // ensure live update when user drags
             if (!rid._styledListener) {
-                rid.addEventListener('input', function(){
-                var v = parseFloat(this.value);
-                var p = Math.round(((v - min) / (max - min)) * 100);
-                var cp = color;
-                // try to pick color from related color picker if present
+              rid.addEventListener('input', function() {
+                var v = parseFloat(this.value), p = Math.round(((v - min) / (max - min)) * 100), cp = color;
                 var cpElem = document.getElementById(layerId + '_color');
                 if (cpElem) cp = cpElem.value;
                 this.style.background = 'linear-gradient(90deg, ' + cp + ' ' + p + '%, #e6e6e6 ' + p + '%)';
@@ -710,12 +783,8 @@
               rid._styledListener = true;
             }
           }
-          if (nid) {
-            nid.style.borderColor = color;
-          }
-        } catch (e) {
-          // ignore
-        }
+          if (nid) nid.style.borderColor = color;
+        } catch (e) {}
       }
 
       // Global function to change marker radius/size
@@ -749,16 +818,16 @@
         highlightLayer = e.target;
         highlightLayer.openPopup();
       }
-      var map = L.map("map", {
+      map = L.map("map", {
         zoomControl: false,
         maxZoom: 28,
         minZoom: 1,
       });
-      var hash = new L.Hash(map);
+      hash = new L.Hash(map);
       map.attributionControl.setPrefix(
         '<a href="https://github.com/AFurqanHassan" target="_blank">Ahmad Furqan Hassan</a> &middot; <a href="https://punjab.gov.pk/wasa" target="_blank">WASA SKP</a>'
       );
-      var autolinker = new Autolinker({
+      autolinker = new Autolinker({
         truncate: { length: 30, location: "smart" },
       });
       // remove popup's row if "visible-with-data"
@@ -826,13 +895,13 @@
           popup._contentNode.classList.remove("media");
         }
       }
-      var zoomControl = L.control
+      zoomControl = L.control
         .zoom({
           position: "topright",
         })
         .addTo(map);
 
-      var measureControl = new L.Control.Measure({
+      measureControl = new L.Control.Measure({
         position: "topright",
         primaryLengthUnit: "meters",
         secondaryLengthUnit: "kilometers",
@@ -849,7 +918,7 @@
         measureToggle.innerHTML = "";
         measureToggle.className += " fas fa-ruler";
       }
-      var bounds_group = new L.featureGroup([]);
+      bounds_group = new L.featureGroup([]);
       function setBounds() {
         map.setMaxBounds(map.getBounds());
         map.setMinZoom(map.getZoom());
@@ -1002,153 +1071,125 @@
         return inside;
       }
 
-      // Haversine distance between two [lon, lat] points in meters
-      function haversineDist(a, b) {
-        var R = 6371000; // Earth radius in meters
-        var lat1 = a[1] * Math.PI / 180;
-        var lat2 = b[1] * Math.PI / 180;
-        var dLat = (b[1] - a[1]) * Math.PI / 180;
-        var dLon = (b[0] - a[0]) * Math.PI / 180;
-        var sinDLat = Math.sin(dLat / 2);
-        var sinDLon = Math.sin(dLon / 2);
-        var h = sinDLat * sinDLat + Math.cos(lat1) * Math.cos(lat2) * sinDLon * sinDLon;
-        var c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-        return R * c;
+      // --- Optimized Categorization Logic ---
+      
+      // Pre-calculate Bounding Box & Constants
+      var BUFFER_METERS = 200;
+      var DEG_PER_METER = 1 / 111320; // Approx lat degree per meter
+      var BUFFER_DEG = BUFFER_METERS * DEG_PER_METER;
+      var BUFFER_DEG_SQ = BUFFER_DEG * BUFFER_DEG;
+
+      // Prepare boundary polygons and their individual bounding boxes for fast filtering
+      boundaryPolygons = [];
+      polyBboxes = [];
+
+      json_MCSKPZones_2.features.forEach(function(f){
+        var coords = (f.geometry.type === 'MultiPolygon') ? f.geometry.coordinates : [f.geometry.coordinates];
+        coords.forEach(function(poly){
+          boundaryPolygons.push(poly);
+          // Calculate bbox for each polygon
+          var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          poly[0].forEach(function(coord){
+            if(coord[0] < minX) minX = coord[0];
+            if(coord[0] > maxX) maxX = coord[0];
+            if(coord[1] < minY) minY = coord[1];
+            if(coord[1] > maxY) maxY = coord[1];
+          });
+          polyBboxes.push({
+            minX: minX - BUFFER_DEG, 
+            minY: minY - BUFFER_DEG, 
+            maxX: maxX + BUFFER_DEG, 
+            maxY: maxY + BUFFER_DEG
+          });
+        });
+      });
+
+      function isPointInBBox(pt, bbox) {
+        return pt[0] >= bbox.minX && pt[0] <= bbox.maxX && 
+               pt[1] >= bbox.minY && pt[1] <= bbox.maxY;
       }
 
-      // Minimum distance from point to any vertex of polygon (approximation)
-      function minDistToPolygon(point, poly) {
-        var min = Infinity;
-        for (var i = 0; i < poly.length; i++) {
-          var d = haversineDist(point, poly[i]);
-          if (d < min) min = d;
-        }
-        return min;
+      function distSq(a, b) {
+        var dx = a[0]-b[0], dy = b[1]-a[1];
+        return dx*dx + dy*dy;
       }
 
-      // Check point inside polygon or within buffer (in meters)
-      function isPointInPolygonWithBuffer(point, vs, bufferMeters) {
-        if (isPointInPolygon(point, vs)) return true;
-        return minDistToPolygon(point, vs) <= bufferMeters;
-      }
-
-      // MultiPolygon check with 100m buffer
-      function isPointInMultiPolygon(point, multiPolyCoords) {
-        var bufferMeters = 200; // 200 meters buffer
-        for (var k = 0; k < multiPolyCoords.length; k++) {
-          var polygon = multiPolyCoords[k];
-          if (isPointInPolygonWithBuffer(point, polygon[0], bufferMeters)) {
-            return true;
+      function fastIsPointInMultiPolygon(pt) {
+        for (var k = 0; k < boundaryPolygons.length; k++) {
+          // 1. Fast BBox check
+          if (!isPointInBBox(pt, polyBboxes[k])) continue;
+          
+          // 2. Exact Polygon check
+          var vs = boundaryPolygons[k][0];
+          if (isPointInPolygon(pt, vs)) return true;
+          
+          // 3. Fast Euclidean Buffer check (approximation for speed)
+          for (var i = 0; i < vs.length; i++) {
+            if (distSq(pt, vs[i]) <= BUFFER_DEG_SQ) return true;
           }
         }
         return false;
       }
 
-      // 1. Prepare Boundary Polygons
-      // json_MCSKPZones_2 features are MultiPolygons
-      var boundaryPolygons = [];
-      json_MCSKPZones_2.features.forEach(function(f){
-        if(f.geometry.type === 'MultiPolygon'){
-             f.geometry.coordinates.forEach(function(poly){
-                 boundaryPolygons.push(poly);
-             });
-        } else if(f.geometry.type === 'Polygon'){
-             boundaryPolygons.push(f.geometry.coordinates);
-        }
-      });
 
-      // 2. Split Manhole Features
-      var insideFeatures = [];
-      var outsideFeatures = [];
+      // 2. Filter Unique Features & Split by Boundary
+      uniqueFeatures = [];
+      coordMap = {};
+      
+      totalInside = [];
+      totalOutside = [];
+      uniqueInside = [];
+      uniqueOutside = [];
       
       json_ManholeCovers_1.features.forEach(function(feature){
         var pt = feature.geometry.coordinates; // [lon, lat]
-        var isInside = isPointInMultiPolygon(pt, boundaryPolygons);
-        if(isInside) {
-            insideFeatures.push(feature);
-        } else {
-            outsideFeatures.push(feature);
+        var coordStr = pt.join(',');
+        var isInside = fastIsPointInMultiPolygon(pt);
+        
+        // Populate Total
+        if(isInside) totalInside.push(feature);
+        else totalOutside.push(feature);
+
+        // Populate Unique
+        if(!coordMap[coordStr]) {
+            coordMap[coordStr] = true;
+            uniqueFeatures.push(feature);
+            if(isInside) uniqueInside.push(feature);
+            else uniqueOutside.push(feature);
         }
       });
 
-      // 3. Create Layers for Inside/Outside
-      var json_ManholeCovers_Inside = {
-        "type": "FeatureCollection",
-        "name": "ManholeCovers_Inside",
-        "features": insideFeatures
-      };
-      var json_ManholeCovers_Outside = {
-        "type": "FeatureCollection",
-        "name": "ManholeCovers_Outside",
-        "features": outsideFeatures
-      };
+      // 3. Create LayerCollections
+      json_ManholeCovers_Inside = { "type": "FeatureCollection", "features": totalInside };
+      json_ManholeCovers_Outside = { "type": "FeatureCollection", "features": totalOutside };
+      json_UniqueInside = { "type": "FeatureCollection", "features": uniqueInside };
+      json_UniqueOutside = { "type": "FeatureCollection", "features": uniqueOutside };
 
       // Style function (reused, but distinct layers allow distinct defaults/overrides if we want)
-      function style_ManholeCovers_Inside() {
-        return {
-          pane: "pane_ManholeCovers_1", // reuse pane or create new
-          radius: defaultManholeRadius,
-          opacity: 1,
-          color: "rgba(35,35,35,1.0)",
-          dashArray: "",
-          lineCap: "butt",
-          lineJoin: "miter",
-          weight: 1,
-          fill: true,
-          fillOpacity: 1,
-          fillColor: defaultManholeColor, // Start with same color
-          interactive: true,
-        };
-      }
-      function style_ManholeCovers_Outside() {
-        return {
-          pane: "pane_ManholeCovers_1", // reuse pane
-          radius: defaultManholeRadius,
-          opacity: 1,
-          color: "rgba(35,35,35,1.0)",
-          dashArray: "",
-          lineCap: "butt",
-          lineJoin: "miter",
-          weight: 1,
-          fill: true,
-          fillOpacity: 1,
-          fillColor: '#FF8800', // Different default color for contrast? or same. Let's use darker.
-          interactive: true,
-        };
-      }
+      // --- Refactored Layer Management (Stable Objects) ---
       
-      // Inside Layer
-      var layer_ManholeCovers_Inside = new L.geoJson(json_ManholeCovers_Inside, {
-        attribution: "",
-        interactive: true,
-        dataVar: "json_ManholeCovers_Inside",
-        layerName: "layer_ManholeCovers_Inside",
-        pane: "pane_ManholeCovers_1",
+
+
+      // Inside Layer (Persistent)
+      layer_ManholeCovers_Inside = new L.geoJson(json_ManholeCovers_Inside, {
+        attribution: "", interactive: true, dataVar: "json_ManholeCovers_Inside",
+        layerName: "layer_ManholeCovers_Inside", pane: "pane_ManholeCovers_1",
         onEachFeature: pop_ManholeCovers_1,
-        pointToLayer: function (feature, latlng) {
-          return L.circleMarker(latlng, style_ManholeCovers_Inside());
-        },
+        pointToLayer: function (feature, latlng) { return L.circleMarker(latlng, getActiveStyle(false)); },
       });
       bounds_group.addLayer(layer_ManholeCovers_Inside);
       map.addLayer(layer_ManholeCovers_Inside);
 
-      // Outside Layer
-      var layer_ManholeCovers_Outside = new L.geoJson(json_ManholeCovers_Outside, {
-        attribution: "",
-        interactive: true,
-        dataVar: "json_ManholeCovers_Outside",
-        layerName: "layer_ManholeCovers_Outside",
-        pane: "pane_ManholeCovers_1",
+      // Outside Layer (Persistent)
+      layer_ManholeCovers_Outside = new L.geoJson(json_ManholeCovers_Outside, {
+        attribution: "", interactive: true, dataVar: "json_ManholeCovers_Outside",
+        layerName: "layer_ManholeCovers_Outside", pane: "pane_ManholeCovers_1",
         onEachFeature: pop_ManholeCovers_1,
-        pointToLayer: function (feature, latlng) {
-             // Override default color for outside to make them distinct initially
-             var style = style_ManholeCovers_Outside();
-             style.fillColor = '#555555'; // Grey for outside by default
-             return L.circleMarker(latlng, style);
-        },
+        pointToLayer: function (feature, latlng) { return L.circleMarker(latlng, getActiveStyle(true)); },
       });
       bounds_group.addLayer(layer_ManholeCovers_Outside);
       map.addLayer(layer_ManholeCovers_Outside);
+
 
       function pop_MCSKPZones_2(feature, layer) {
         layer.on({
@@ -1244,7 +1285,7 @@
       map.createPane("pane_MCSKPZones_2");
       map.getPane("pane_MCSKPZones_2").style.zIndex = 402;
       map.getPane("pane_MCSKPZones_2").style["mix-blend-mode"] = "normal";
-      var layer_MCSKPZones_2 = new L.geoJson(json_MCSKPZones_2, {
+      layer_MCSKPZones_2 = new L.geoJson(json_MCSKPZones_2, {
         attribution: "",
         interactive: false,
         dataVar: "json_MCSKPZones_2",
@@ -1262,17 +1303,12 @@
           layer: layer_MCSKPZones_2,
         },
         {
-          label: '<img src="legend/MCSKPZones_2.png" /> MC SKP Zones',
-          layer: layer_MCSKPZones_2,
-        },
-        {
           id: 'ManholeCovers_Inside',
           label: '<div class="layer-row-container">' +
                    '<div class="layer-label-top">' +
                      '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name">Inside Boundary (' + insideFeatures.length + ')</span>' +
+                       '<span class="leaflet-layerstree-header-name" id="label_inside">Inside Boundary (' + totalInside.length + ')</span>' +
                      '</div>' +
-                     '<i class="fas fa-trash-alt remove-layer-btn" style="visibility:hidden"></i>' +
                    '</div>' +
                    '<div class="layer-controls">' +
                      '<div class="layer-color-picker-wrapper">' +
@@ -1289,9 +1325,8 @@
           label: '<div class="layer-row-container">' +
                    '<div class="layer-label-top">' +
                      '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name">Outside Boundary (' + outsideFeatures.length + ')</span>' +
+                       '<span class="leaflet-layerstree-header-name" id="label_outside">Outside Boundary (' + totalOutside.length + ')</span>' +
                      '</div>' +
-                     '<i class="fas fa-trash-alt remove-layer-btn" style="visibility:hidden"></i>' +
                    '</div>' +
                    '<div class="layer-controls">' +
                      '<div class="layer-color-picker-wrapper">' +
@@ -1310,19 +1345,123 @@
       });
       lay.addTo(map);
       // Move layers control to sidebar
-      document.getElementById("layers-control").appendChild(lay.getContainer());
-      // initialize slider visuals to match color pickers (small delay while DOM builds)
+      var layersContainer = lay.getContainer();
+      document.getElementById("layers-control").appendChild(layersContainer);
+      
+      // initialize slider visuals to match color pickers (allow time for Leaflet Tree to render)
       setTimeout(function(){
-        try{
+        try {
+          updateToggleView('total'); // Force initial visibility state first
+          
           setSliderColorForLayer('ManholeCovers_Inside', defaultManholeColor);
           setSliderColorForLayer('ManholeCovers_Outside', '#555555');
+          setSliderColorForLayer('Unique_Inside', '#00D1FF');
+          setSliderColorForLayer('Unique_Outside', '#0084A1');
+          
           document.querySelectorAll('.layer-color-picker').forEach(function(cp){
             if (!cp.id) return;
             var lid = cp.id.replace('_color','');
             setSliderColorForLayer(lid, cp.value);
           });
-        }catch(e){}
-      }, 60);
+          setTimeout(function(){ updateToggleView('total'); }, 100);
+        } catch (err) {
+          console.error("Layer init timeout error:", err);
+        }
+      }, 500);
+    } catch (err) {
+      console.error("Critical app initialization error:", err);
+      var layersDiv = document.getElementById("layers-control");
+      if (layersDiv) layersDiv.innerHTML = '<div style="color:red;font-size:11px;padding:10px;">Error initializing layers. Refer console.</div>';
+    }
+  }
+
+
+
+      // Dynamic Style Logic
+      function getActiveStyle(isOutside) {
+        var toggle = document.getElementById('view-toggle');
+        var isUnique = toggle && toggle.classList.contains('unique-active');
+        if (isOutside) {
+          var rOut = document.getElementById('ManholeCovers_Outside_range');
+          return {
+            pane: "pane_ManholeCovers_1",
+            radius: rOut ? parseFloat(rOut.value) : defaultManholeRadius,
+            opacity: 1, color: "rgba(35,35,35,1.0)", weight: 1, fill: true, fillOpacity: 1,
+            fillColor: isUnique ? modeColors.unique.ManholeCovers_Outside : modeColors.total.ManholeCovers_Outside,
+            interactive: true,
+          };
+        } else {
+          var rIn = document.getElementById('ManholeCovers_Inside_range');
+          return {
+            pane: "pane_ManholeCovers_1",
+            radius: rIn ? parseFloat(rIn.value) : defaultManholeRadius,
+            opacity: 1, color: "rgba(35,35,35,1.0)", weight: 1, fill: true, fillOpacity: 1,
+            fillColor: isUnique ? modeColors.unique.ManholeCovers_Inside : modeColors.total.ManholeCovers_Inside,
+            interactive: true,
+          };
+        }
+      }
+
+      // Toggle View Logic
+      function updateToggleView(view) {
+        var container = document.getElementById('view-toggle');
+        if (!container) return;
+        var options = container.querySelectorAll('.toggle-option');
+        
+        options.forEach(function(opt) {
+          opt.classList.toggle('active', opt.dataset.view === view);
+        });
+
+        if (view === 'unique') {
+          container.classList.add('unique-active');
+          // Update Persistent layers with Unique data
+          if (typeof layer_ManholeCovers_Inside !== 'undefined') {
+            layer_ManholeCovers_Inside.clearLayers();
+            layer_ManholeCovers_Inside.addData(json_UniqueInside);
+          }
+          if (typeof layer_ManholeCovers_Outside !== 'undefined') {
+            layer_ManholeCovers_Outside.clearLayers();
+            layer_ManholeCovers_Outside.addData(json_UniqueOutside);
+          }
+
+          var l_in = document.getElementById('label_inside');
+          var l_out = document.getElementById('label_outside');
+          if(l_in) l_in.textContent = 'Inside Boundary (' + uniqueInside.length + ')';
+          if(l_out) l_out.textContent = 'Outside Boundary (' + uniqueOutside.length + ')';
+          
+          // Restore Unique colors from state
+          changeLayerColor('ManholeCovers_Inside', modeColors.unique.ManholeCovers_Inside);
+          changeLayerColor('ManholeCovers_Outside', modeColors.unique.ManholeCovers_Outside);
+        } else {
+          container.classList.remove('unique-active');
+          // Restore Total data
+          if (typeof layer_ManholeCovers_Inside !== 'undefined') {
+            layer_ManholeCovers_Inside.clearLayers();
+            layer_ManholeCovers_Inside.addData(json_ManholeCovers_Inside);
+          }
+          if (typeof layer_ManholeCovers_Outside !== 'undefined') {
+            layer_ManholeCovers_Outside.clearLayers();
+            layer_ManholeCovers_Outside.addData(json_ManholeCovers_Outside);
+          }
+
+          var l_in = document.getElementById('label_inside');
+          var l_out = document.getElementById('label_outside');
+          if(l_in) l_in.textContent = 'Inside Boundary (' + totalInside.length + ')';
+          if(l_out) l_out.textContent = 'Outside Boundary (' + totalOutside.length + ')';
+          
+          // Restore Total colors from state
+          changeLayerColor('ManholeCovers_Inside', modeColors.total.ManholeCovers_Inside);
+          changeLayerColor('ManholeCovers_Outside', modeColors.total.ManholeCovers_Outside);
+        }
+      }
+
+      document.getElementById('view-toggle').addEventListener('click', function(e) {
+        var opt = e.target.closest('.toggle-option');
+        if (opt) {
+          updateToggleView(opt.dataset.view);
+        }
+      });
+
       // Sidebar Toggle Logic
       document
         .getElementById("sidebar-toggle")
