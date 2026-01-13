@@ -616,6 +616,46 @@
       .sidebar-group-hidden {
         display: none !important;
       }
+      /* Basemap Switcher UI */
+      #basemap-switcher {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        z-index: 1000;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border: 2px solid white;
+        border-radius: 12px;
+        overflow: hidden;
+        width: 80px;
+        height: 80px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      }
+      #basemap-switcher:hover {
+        transform: scale(1.05);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+      }
+      #basemap-switcher img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      #basemap-switcher .label {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.6);
+        color: white;
+        font-size: 11px;
+        font-weight: 700;
+        text-align: center;
+        padding: 4px 0;
+        font-family: 'Open Sans', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
     </style>
     <title>Manhole Locations — Interactive Map</title>
   </head>
@@ -665,7 +705,12 @@
           </div>
         </div>
       </div>
-      <div id="map"></div>
+      <div id="map">
+        <div id="basemap-switcher" title="Switch Basemap">
+          <img id="basemap-img" src="https://mt1.google.com/vt/lyrs=s&x=0&y=0&z=0" alt="Satellite">
+          <div class="label" id="basemap-label">Satellite</div>
+        </div>
+      </div>
     </div>
     <script src="js/qgis2web_expressions.js"></script>
     <script src="js/leaflet.js"></script>
@@ -685,6 +730,8 @@
       // Global variables
       var map, lay, hash, autolinker, zoomControl, measureControl, bounds_group;
       var layer_ManholeCovers_Inside, layer_ManholeCovers_Outside, layer_MCSKPZones_2;
+      var layer_OSMStandard_0, layer_GoogleSatellite;
+      var currentBasemap = 'osm';
       var overlaysTree = [], labels = [], totalMarkers = 0;
       
       // Data arrays & FeatureCollections (Global for accessibility)
@@ -925,7 +972,7 @@
       }
       map.createPane("pane_OSMStandard_0");
       map.getPane("pane_OSMStandard_0").style.zIndex = 400;
-      var layer_OSMStandard_0 = L.tileLayer(
+      layer_OSMStandard_0 = L.tileLayer(
         "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         {
           pane: "pane_OSMStandard_0",
@@ -938,8 +985,42 @@
           maxNativeZoom: 19,
         }
       );
-      layer_OSMStandard_0;
+      
+      map.createPane("pane_GoogleSatellite");
+      map.getPane("pane_GoogleSatellite").style.zIndex = 399;
+      layer_GoogleSatellite = L.tileLayer(
+        "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        {
+          pane: "pane_GoogleSatellite",
+          opacity: 1.0,
+          // attribution: '© Google',
+          minZoom: 1,
+          maxZoom: 22,
+          minNativeZoom: 0,
+          maxNativeZoom: 22,
+        }
+      );
+
       map.addLayer(layer_OSMStandard_0);
+
+      // Basemap Switching Logic
+      document.getElementById('basemap-switcher').addEventListener('click', function() {
+        if (currentBasemap === 'osm') {
+          map.removeLayer(layer_OSMStandard_0);
+          map.addLayer(layer_GoogleSatellite);
+          currentBasemap = 'satellite';
+          document.getElementById('basemap-img').src = "https://tile.openstreetmap.org/0/0/0.png";
+          document.getElementById('basemap-label').textContent = "Standard";
+          document.getElementById('basemap-switcher').title = "Switch to Standard Map";
+        } else {
+          map.removeLayer(layer_GoogleSatellite);
+          map.addLayer(layer_OSMStandard_0);
+          currentBasemap = 'osm';
+          document.getElementById('basemap-img').src = "https://mt1.google.com/vt/lyrs=s&x=0&y=0&z=0";
+          document.getElementById('basemap-label').textContent = "Satellite";
+          document.getElementById('basemap-switcher').title = "Switch to Satellite Map";
+        }
+      });
 
       // Helper function to handle image loading errors and fallback
       function handleImageError(img, filename, linkId, errId) {
@@ -1017,6 +1098,11 @@
           maxHeight: 600,
           maxWidth: 500,
           minWidth: 300,
+        });
+
+        // Zoom to marker on click
+        layer.on('click', function(e) {
+            map.setView(e.latlng, 20);
         });
       }
 
