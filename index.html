@@ -384,6 +384,23 @@
         opacity: 1;
         transform: scale(1.2);
       }
+      .zoom-layer-btn, .categorize-layer-btn {
+        cursor: pointer;
+        padding: 4px;
+        font-size: 14px;
+        transition: all 0.2s;
+        opacity: 0.6;
+        color: #0078a8;
+      }
+      .zoom-layer-btn:hover, .categorize-layer-btn:hover {
+        opacity: 1;
+        transform: scale(1.15);
+        color: #005a7e;
+      }
+      .categorize-layer-btn.active {
+        color: #ec4899;
+        opacity: 1;
+      }
       /* Legend Alignment */
       .leaflet-layerstree-header img {
         margin-right: 10px !important;
@@ -616,6 +633,12 @@
       .sidebar-group-hidden {
         display: none !important;
       }
+      /* Imagery Clarity Optimizations */
+      .leaflet-tile-container img {
+        image-rendering: -webkit-optimize-contrast; /* Safari */
+        image-rendering: crisp-edges; /* Standard */
+        image-rendering: pixelated; /* Fallback for extreme zoom upscaling */
+      }
       /* Basemap Switcher UI */
       #basemap-switcher {
         position: absolute;
@@ -657,7 +680,7 @@
         letter-spacing: 0.5px;
       }
     </style>
-    <title>Manhole Locations — Interactive Map</title>
+    <title>Manhole Locations</title>
   </head>
   <body>
     <div id="page-bg" aria-hidden="true"></div>
@@ -725,11 +748,11 @@
     <script src="js/leaflet.photon.js"></script>
     <script src="js/leaflet-measure.js"></script>
     <script src="data/ManholeCovers_1.js"></script>
-    <script src="data/MCSKPZones_2.js"></script>
+    <script src="data/subdivs.js"></script>
     <script>
       // Global variables
       var map, lay, hash, autolinker, zoomControl, measureControl, bounds_group;
-      var layer_ManholeCovers_Inside, layer_ManholeCovers_Outside, layer_MCSKPZones_2;
+      var layer_ManholeCovers_Inside, layer_ManholeCovers_Outside, layer_subdivs;
       var layer_OSMStandard_0, layer_GoogleSatellite;
       var currentBasemap = 'osm';
       var overlaysTree = [], labels = [], totalMarkers = 0;
@@ -857,6 +880,79 @@
               targetLayer.setStyle({ radius: Number(newSize) });
             }
           }
+        }
+      };
+
+      // Global function to zoom to layer extent
+      window.zoomToLayer = function(layerId, e) {
+        if (e) {
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.preventDefault) e.preventDefault();
+        }
+        var targetLayer = null;
+        for (var j = 0; j < overlaysTree.length; j++) {
+            if (overlaysTree[j].id === layerId || overlaysTree[j].layerName === layerId) {
+                targetLayer = overlaysTree[j].layer;
+                break;
+            }
+        }
+        if (targetLayer && typeof targetLayer.getBounds === 'function') {
+            map.fitBounds(targetLayer.getBounds());
+            // Close mobile sidebar if open
+            var sidebar = document.getElementById("sidebar");
+            if (sidebar) sidebar.classList.remove("active");
+        }
+      };
+
+      // Global function to apply symbology by categories
+      window.applyCategorizedSymbology = function(layerId, field, e) {
+        if (e) {
+            if (e.stopPropagation) e.stopPropagation();
+            if (e.preventDefault) e.preventDefault();
+        }
+        var targetLayer = null;
+        for (var j = 0; j < overlaysTree.length; j++) {
+            if (overlaysTree[j].id === layerId) {
+                targetLayer = overlaysTree[j].layer;
+                break;
+            }
+        }
+        if (!targetLayer) return;
+
+        var btn = document.getElementById(layerId + '_categorize');
+        var isCategorizing = btn && btn.classList.contains('active');
+        
+        if (isCategorizing) {
+            // Revert to single symbol (using the current color picker value)
+            var cp = document.getElementById(layerId + '_color');
+            var baseColor = cp ? cp.value : (layerId === 'ManholeCovers_Inside' ? defaultManholeColor : '#555555');
+            targetLayer.eachLayer(function(l) {
+                if (l.setStyle) l.setStyle({ fillColor: baseColor, color: 'rgba(35,35,35,1.0)' });
+            });
+            if (btn) btn.classList.remove('active');
+        } else {
+            // Apply categorization
+            var uniqueValues = {};
+            targetLayer.eachLayer(function(l) {
+                if (l.feature && l.feature.properties && l.feature.properties[field]) {
+                    uniqueValues[l.feature.properties[field]] = true;
+                }
+            });
+            
+            var values = Object.keys(uniqueValues).sort();
+            var valColors = {};
+            values.forEach(function(v, i) {
+                valColors[v] = colorPalette[i % colorPalette.length];
+            });
+            
+            targetLayer.eachLayer(function(l) {
+                if (l.feature && l.feature.properties && l.feature.properties[field]) {
+                    var val = l.feature.properties[field];
+                    var col = valColors[val];
+                    if (l.setStyle) l.setStyle({ fillColor: col, color: '#fff', weight: 1.5 });
+                }
+            });
+            if (btn) btn.classList.add('active');
         }
       };
 
@@ -994,8 +1090,9 @@
           pane: "pane_GoogleSatellite",
           opacity: 1.0,
           // attribution: '© Google',
+          detectRetina: true,
           minZoom: 1,
-          maxZoom: 22,
+          maxZoom: 28,
           minNativeZoom: 0,
           maxNativeZoom: 22,
         }
@@ -1161,18 +1258,23 @@
       
       // Pre-calculate Bounding Box & Constants
       var BUFFER_METERS = 200;
+      var REMOVE_THRESHOLD_METERS = 1000;
       var DEG_PER_METER = 1 / 111320; // Approx lat degree per meter
       var BUFFER_DEG = BUFFER_METERS * DEG_PER_METER;
       var BUFFER_DEG_SQ = BUFFER_DEG * BUFFER_DEG;
+      var REMOVE_THRESHOLD_DEG = REMOVE_THRESHOLD_METERS * DEG_PER_METER;
+      var REMOVE_THRESHOLD_DEG_SQ = REMOVE_THRESHOLD_DEG * REMOVE_THRESHOLD_DEG;
 
       // Prepare boundary polygons and their individual bounding boxes for fast filtering
       boundaryPolygons = [];
       polyBboxes = [];
+      var boundaryNames = [];
 
-      json_MCSKPZones_2.features.forEach(function(f){
+      json_subdivs.features.forEach(function(f){
         var coords = (f.geometry.type === 'MultiPolygon') ? f.geometry.coordinates : [f.geometry.coordinates];
         coords.forEach(function(poly){
           boundaryPolygons.push(poly);
+          boundaryNames.push(f.properties.Sub_Div || 'Unknown');
           // Calculate bbox for each polygon
           var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
           poly[0].forEach(function(coord){
@@ -1182,10 +1284,10 @@
             if(coord[1] > maxY) maxY = coord[1];
           });
           polyBboxes.push({
-            minX: minX - BUFFER_DEG, 
-            minY: minY - BUFFER_DEG, 
-            maxX: maxX + BUFFER_DEG, 
-            maxY: maxY + BUFFER_DEG
+            minX: minX - REMOVE_THRESHOLD_DEG, 
+            minY: minY - REMOVE_THRESHOLD_DEG, 
+            maxX: maxX + REMOVE_THRESHOLD_DEG, 
+            maxY: maxY + REMOVE_THRESHOLD_DEG
           });
         });
       });
@@ -1200,23 +1302,17 @@
         return dx*dx + dy*dy;
       }
 
-      function fastIsPointInMultiPolygon(pt) {
+      function getSubdivisionAtPoint(pt, bufferSq) {
         for (var k = 0; k < boundaryPolygons.length; k++) {
-          // 1. Fast BBox check
           if (!isPointInBBox(pt, polyBboxes[k])) continue;
-          
-          // 2. Exact Polygon check
           var vs = boundaryPolygons[k][0];
-          if (isPointInPolygon(pt, vs)) return true;
-          
-          // 3. Fast Euclidean Buffer check (approximation for speed)
+          if (isPointInPolygon(pt, vs)) return boundaryNames[k];
           for (var i = 0; i < vs.length; i++) {
-            if (distSq(pt, vs[i]) <= BUFFER_DEG_SQ) return true;
+            if (distSq(pt, vs[i]) <= bufferSq) return boundaryNames[k];
           }
         }
-        return false;
+        return null;
       }
-
 
       // 2. Filter Unique Features & Split by Boundary
       uniqueFeatures = [];
@@ -1230,8 +1326,16 @@
       json_ManholeCovers_1.features.forEach(function(feature){
         var pt = feature.geometry.coordinates; // [lon, lat]
         var coordStr = pt.join(',');
-        var isInside = fastIsPointInMultiPolygon(pt);
         
+        var subName = getSubdivisionAtPoint(pt, REMOVE_THRESHOLD_DEG_SQ);
+        if (!subName) return; // Discard if further than 1km
+
+        var insideName = getSubdivisionAtPoint(pt, BUFFER_DEG_SQ);
+        var isInside = !!insideName;
+        
+        // Update feature property for categorization
+        feature.properties['Sub_Div'] = subName;
+
         // Populate Total
         if(isInside) totalInside.push(feature);
         else totalOutside.push(feature);
@@ -1251,11 +1355,8 @@
       json_UniqueInside = { "type": "FeatureCollection", "features": uniqueInside };
       json_UniqueOutside = { "type": "FeatureCollection", "features": uniqueOutside };
 
-      // Style function (reused, but distinct layers allow distinct defaults/overrides if we want)
-      // --- Refactored Layer Management (Stable Objects) ---
+      // ... [rest of layer creation remains mostly the same, but let's update overlaysTree] ...
       
-
-
       // Inside Layer (Persistent)
       layer_ManholeCovers_Inside = new L.geoJson(json_ManholeCovers_Inside, {
         attribution: "", interactive: true, dataVar: "json_ManholeCovers_Inside",
@@ -1277,7 +1378,7 @@
       map.addLayer(layer_ManholeCovers_Outside);
 
 
-      function pop_MCSKPZones_2(feature, layer) {
+      function pop_subdivs(feature, layer) {
         layer.on({
           mouseout: function (e) {
             if (typeof layer.closePopup == "function") {
@@ -1293,61 +1394,30 @@
         var popupContent =
           '<table>\
                     <tr>\
-                        <td colspan="2">' +
-          (feature.properties["OBJECTID"] !== null
-            ? autolinker.link(
-                String(feature.properties["OBJECTID"])
-                  .replace(/'/g, "'")
-                  .toLocaleString()
-              )
+                        <th scope="row">District</th>\
+                        <td>' +
+          (feature.properties["District"] !== null
+            ? autolinker.link(String(feature.properties["District"]))
             : "") +
           '</td>\
                     </tr>\
                     <tr>\
-                        <td colspan="2">' +
-          (feature.properties["Distt_Name"] !== null
-            ? autolinker.link(
-                String(feature.properties["Distt_Name"])
-                  .replace(/'/g, "'")
-                  .toLocaleString()
-              )
+                        <th scope="row">Subdivision</th>\
+                        <td>' +
+          (feature.properties["Sub_Div"] !== null
+            ? autolinker.link(String(feature.properties["Sub_Div"]))
             : "") +
           '</td>\
                     </tr>\
                     <tr>\
-                        <td colspan="2">' +
-          (feature.properties["Shape_Leng"] !== null
-            ? autolinker.link(
-                String(feature.properties["Shape_Leng"])
-                  .replace(/'/g, "'")
-                  .toLocaleString()
-              )
-            : "") +
-          '</td>\
-                    </tr>\
-                    <tr>\
-                        <td colspan="2">' +
+                        <th scope="row">Area (sqm)</th>\
+                        <td>' +
           (feature.properties["Shape_Area"] !== null
-            ? autolinker.link(
-                String(feature.properties["Shape_Area"])
-                  .replace(/'/g, "'")
-                  .toLocaleString()
-              )
+            ? autolinker.link(Number(feature.properties["Shape_Area"]).toLocaleString())
             : "") +
           '</td>\
                     </tr>\
-                    <tr>\
-                        <td colspan="2">' +
-          (feature.properties["ZONE"] !== null
-            ? autolinker.link(
-                String(feature.properties["ZONE"])
-                  .replace(/'/g, "'")
-                  .toLocaleString()
-              )
-            : "") +
-          "</td>\
-                    </tr>\
-                </table>";
+                </table>';
         var content = removeEmptyRowsFromPopupContent(popupContent, feature);
         layer.on("popupopen", function (e) {
           addClassToPopupIfMedia(content, e.popup);
@@ -1355,9 +1425,9 @@
         layer.bindPopup(content, { maxHeight: 400 });
       }
 
-      function style_MCSKPZones_2_0() {
+      function style_subdivs_0() {
         return {
-          pane: "pane_MCSKPZones_2",
+          pane: "pane_subdivs",
           opacity: 1,
           color: "rgba(35,35,35,1.0)",
           dashArray: "",
@@ -1368,25 +1438,35 @@
           interactive: false,
         };
       }
-      map.createPane("pane_MCSKPZones_2");
-      map.getPane("pane_MCSKPZones_2").style.zIndex = 402;
-      map.getPane("pane_MCSKPZones_2").style["mix-blend-mode"] = "normal";
-      layer_MCSKPZones_2 = new L.geoJson(json_MCSKPZones_2, {
+      map.createPane("pane_subdivs");
+      map.getPane("pane_subdivs").style.zIndex = 402;
+      map.getPane("pane_subdivs").style["mix-blend-mode"] = "normal";
+      layer_subdivs = new L.geoJson(json_subdivs, {
         attribution: "",
         interactive: false,
-        dataVar: "json_MCSKPZones_2",
-        layerName: "layer_MCSKPZones_2",
-        pane: "pane_MCSKPZones_2",
-        onEachFeature: pop_MCSKPZones_2,
-        style: style_MCSKPZones_2_0,
+        dataVar: "json_subdivs",
+        layerName: "layer_subdivs",
+        pane: "pane_subdivs",
+        onEachFeature: pop_subdivs,
+        style: style_subdivs_0,
       });
-      bounds_group.addLayer(layer_MCSKPZones_2);
-      map.addLayer(layer_MCSKPZones_2);
-      map.fitBounds(layer_MCSKPZones_2.getBounds());
+      bounds_group.addLayer(layer_subdivs);
+      map.addLayer(layer_subdivs);
+      map.fitBounds(layer_subdivs.getBounds());
       var overlaysTree = [
         {
-          label: '<img src="legend/MCSKPZones_2.png" /> MC SKP Zones',
-          layer: layer_MCSKPZones_2,
+          label: '<div class="layer-row-container">' +
+                   '<div class="layer-label-top">' +
+                     '<div class="layer-label-group">' +
+                       '<span class="leaflet-layerstree-header-name">Subdivisions</span>' +
+                     '</div>' +
+                     '<div class="layer-btns">' +
+                       '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'layer_subdivs\', event)" title="Zoom to Layer"></i>' +
+                     '</div>' +
+                   '</div>' +
+                 '</div>',
+          layer: layer_subdivs,
+          id: 'layer_subdivs'
         },
         {
           id: 'ManholeCovers_Inside',
@@ -1394,6 +1474,10 @@
                    '<div class="layer-label-top">' +
                      '<div class="layer-label-group">' +
                        '<span class="leaflet-layerstree-header-name" id="label_inside">Inside Boundary (' + totalInside.length + ')</span>' +
+                     '</div>' +
+                     '<div class="layer-btns">' +
+                       '<i class="fas fa-layer-group categorize-layer-btn" id="ManholeCovers_Inside_categorize" onclick="applyCategorizedSymbology(\'ManholeCovers_Inside\', \'Sub_Div\', event)" title="Categorize by subdivision"></i>' +
+                       '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'ManholeCovers_Inside\', event)" title="Zoom to Layer"></i>' +
                      '</div>' +
                    '</div>' +
                    '<div class="layer-controls">' +
@@ -1412,6 +1496,10 @@
                    '<div class="layer-label-top">' +
                      '<div class="layer-label-group">' +
                        '<span class="leaflet-layerstree-header-name" id="label_outside">Outside Boundary (' + totalOutside.length + ')</span>' +
+                     '</div>' +
+                     '<div class="layer-btns">' +
+                       '<i class="fas fa-layer-group categorize-layer-btn" id="ManholeCovers_Outside_categorize" onclick="applyCategorizedSymbology(\'ManholeCovers_Outside\', \'Sub_Div\', event)" title="Categorize by subdivision"></i>' +
+                       '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'ManholeCovers_Outside\', event)" title="Zoom to Layer"></i>' +
                      '</div>' +
                    '</div>' +
                    '<div class="layer-controls">' +
@@ -1438,6 +1526,15 @@
       setTimeout(function(){
         try {
           updateToggleView('total'); // Force initial visibility state first
+          
+          // Fix: Prevent any clicks within our custom layer rows from toggling the checkbox
+          document.querySelectorAll('.layer-row-container').forEach(function(el) {
+            L.DomEvent.disableClickPropagation(el);
+            // Also prevent default for any clicks on our custom row to be super safe
+            L.DomEvent.on(el, 'click', function(e) {
+                if (e.preventDefault) e.preventDefault();
+            });
+          });
           
           setSliderColorForLayer('ManholeCovers_Inside', defaultManholeColor);
           setSliderColorForLayer('ManholeCovers_Outside', '#555555');
@@ -1601,19 +1698,19 @@
       };
       setBounds();
       var i = 0;
-      layer_MCSKPZones_2.eachLayer(function (layer) {
+      layer_subdivs.eachLayer(function (layer) {
         var context = {
           feature: layer.feature,
           variables: {},
         };
         layer.bindTooltip(
-          layer.feature.properties["ZONE"] !== null
+          layer.feature.properties["Sub_Div"] !== null
             ? String(
                 "<div style=\"color: #eb1b1b; font-size: 14pt; font-weight: bold; font-family: 'Open Sans', sans-serif;\">" +
-                  layer.feature.properties["ZONE"]
+                  layer.feature.properties["Sub_Div"]
               ) + "</div>"
             : "",
-          { permanent: true, offset: [-0, -16], className: "css_MCSKPZones_2" }
+          { permanent: true, offset: [-0, -16], className: "css_subdivs" }
         );
         labels.push(layer);
         totalMarkers += 1;
@@ -1621,15 +1718,15 @@
         addLabel(layer, i);
         i++;
       });
-      resetLabels([layer_MCSKPZones_2]);
+      resetLabels([layer_subdivs]);
       map.on("zoomend", function () {
-        resetLabels([layer_MCSKPZones_2]);
+        resetLabels([layer_subdivs]);
       });
       map.on("layeradd", function () {
-        resetLabels([layer_MCSKPZones_2]);
+        resetLabels([layer_subdivs]);
       });
       map.on("layerremove", function () {
-        resetLabels([layer_MCSKPZones_2]);
+        resetLabels([layer_subdivs]);
       });
 
       // CSV and Image Upload Logic
