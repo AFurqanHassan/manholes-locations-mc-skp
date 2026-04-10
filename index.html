@@ -397,9 +397,37 @@
         transform: scale(1.15);
         color: #005a7e;
       }
+      .layer-btns {
+        display: flex;
+        gap: 4px;
+        min-width: 45px;
+        justify-content: flex-end;
+      }
       .categorize-layer-btn.active {
         color: #ec4899;
         opacity: 1;
+      }
+      /* Map Labels */
+      .css_subdivs {
+        background: none;
+        border: none;
+        box-shadow: none;
+        color: #eb1b1b;
+        font-weight: bold;
+        font-size: 14pt;
+        text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;
+        pointer-events: none;
+        z-index: 1000 !important;
+      }
+      .css_manhole {
+        background: none;
+        border: none;
+        box-shadow: none;
+        color: #333;
+        font-weight: 500;
+        font-size: 10pt;
+        text-shadow: 0 0 3px #fff;
+        pointer-events: none;
       }
       /* Legend Alignment */
       .leaflet-layerstree-header img {
@@ -923,12 +951,18 @@
         var isCategorizing = btn && btn.classList.contains('active');
         
         if (isCategorizing) {
-            // Revert to single symbol (using the current color picker value)
-            var cp = document.getElementById(layerId + '_color');
-            var baseColor = cp ? cp.value : (layerId === 'ManholeCovers_Inside' ? defaultManholeColor : '#555555');
-            targetLayer.eachLayer(function(l) {
-                if (l.setStyle) l.setStyle({ fillColor: baseColor, color: 'rgba(35,35,35,1.0)' });
-            });
+            // Revert to single symbol
+            if (layerId === 'layer_subdivs') {
+                targetLayer.eachLayer(function(l) {
+                    if (l.setStyle) l.setStyle({ fillOpacity: 0, color: 'rgba(35,35,35,1.0)', weight: 4.0 });
+                });
+            } else {
+                var cp = document.getElementById(layerId + '_color');
+                var baseColor = cp ? cp.value : (layerId === 'ManholeCovers_Inside' ? defaultManholeColor : '#555555');
+                targetLayer.eachLayer(function(l) {
+                    if (l.setStyle) l.setStyle({ fillColor: baseColor, color: 'rgba(35,35,35,1.0)', weight: 1.0 });
+                });
+            }
             if (btn) btn.classList.remove('active');
         } else {
             // Apply categorization
@@ -949,7 +983,18 @@
                 if (l.feature && l.feature.properties && l.feature.properties[field]) {
                     var val = l.feature.properties[field];
                     var col = valColors[val];
-                    if (l.setStyle) l.setStyle({ fillColor: col, color: '#fff', weight: 1.5 });
+                    if (l.setStyle) {
+                        var style = { fillColor: col };
+                        if (layerId === 'layer_subdivs') {
+                            style.fillOpacity = 0.3;
+                            style.color = col;
+                            style.weight = 2;
+                        } else {
+                            style.color = '#fff';
+                            style.weight = 1.5;
+                        }
+                        l.setStyle(style);
+                    }
                 }
             });
             if (btn) btn.classList.add('active');
@@ -1257,9 +1302,11 @@
       // --- Optimized Categorization Logic ---
       
       // Pre-calculate Bounding Box & Constants
-      var BUFFER_METERS = 200;
-      var REMOVE_THRESHOLD_METERS = 1000;
+      var BUFFER_METERS = 0; // Zero buffer for strict boundary following
+      var REMOVE_THRESHOLD_METERS = 1500; // Increased to catch all relevant points
       var DEG_PER_METER = 1 / 111320; // Approx lat degree per meter
+      var LON_SCALE = 0.8507; // cos(31.72 deg) for Sheikhupura
+      
       var BUFFER_DEG = BUFFER_METERS * DEG_PER_METER;
       var BUFFER_DEG_SQ = BUFFER_DEG * BUFFER_DEG;
       var REMOVE_THRESHOLD_DEG = REMOVE_THRESHOLD_METERS * DEG_PER_METER;
@@ -1298,7 +1345,8 @@
       }
 
       function distSq(a, b) {
-        var dx = a[0]-b[0], dy = b[1]-a[1];
+        var dx = (a[0]-b[0]) * LON_SCALE;
+        var dy = a[1]-b[1];
         return dx*dx + dy*dy;
       }
 
@@ -1313,70 +1361,72 @@
         }
         return null;
       }
-
-      // 2. Filter Unique Features & Split by Boundary
+      // 2. Filter Unique Features & Split by Zone
       uniqueFeatures = [];
       coordMap = {};
       
-      totalInside = [];
-      totalOutside = [];
-      uniqueInside = [];
-      uniqueOutside = [];
+      // Store features grouped by Zone
+      manholesByZone = {
+          'Outside Boundary': []
+      };
       
       json_ManholeCovers_1.features.forEach(function(feature){
         var pt = feature.geometry.coordinates; // [lon, lat]
         var coordStr = pt.join(',');
         
-        var subName = getSubdivisionAtPoint(pt, REMOVE_THRESHOLD_DEG_SQ);
-        if (!subName) return; // Discard if further than 1km
-
-        var insideName = getSubdivisionAtPoint(pt, BUFFER_DEG_SQ);
-        var isInside = !!insideName;
+        // Exact inclusion check (0 buffer)
+        var zoneName = getSubdivisionAtPoint(pt, 0); 
         
-        // Update feature property for categorization
-        feature.properties['Sub_Div'] = subName;
+        // If not strictly inside, check if it's within REMOVE_THRESHOLD (Outliers)
+        var nearName = zoneName || getSubdivisionAtPoint(pt, REMOVE_THRESHOLD_DEG_SQ);
+        
+        if (!nearName) return; // Discard true outliers (>1.5km)
 
-        // Populate Total
-        if(isInside) totalInside.push(feature);
-        else totalOutside.push(feature);
+        var finalZone = zoneName || 'Outside Boundary';
+        
+        // Update feature property
+        feature.properties['Sub_Div'] = finalZone;
 
-        // Populate Unique
+        if (!manholesByZone[finalZone]) {
+            manholesByZone[finalZone] = [];
+        }
+        manholesByZone[finalZone].push(feature);
+
+        // Populate Unique track (for the toggle view if needed)
         if(!coordMap[coordStr]) {
             coordMap[coordStr] = true;
             uniqueFeatures.push(feature);
-            if(isInside) uniqueInside.push(feature);
-            else uniqueOutside.push(feature);
         }
       });
 
-      // 3. Create LayerCollections
-      json_ManholeCovers_Inside = { "type": "FeatureCollection", "features": totalInside };
-      json_ManholeCovers_Outside = { "type": "FeatureCollection", "features": totalOutside };
-      json_UniqueInside = { "type": "FeatureCollection", "features": uniqueInside };
-      json_UniqueOutside = { "type": "FeatureCollection", "features": uniqueOutside };
+      // Populate legacy globals for backward compatibility with existing UI if needed
+      totalInside = (manholesByZone['Zone A'] || []).concat(manholesByZone['Zone B'] || []);
+      totalOutside = manholesByZone['Outside Boundary'] || [];
 
-      // ... [rest of layer creation remains mostly the same, but let's update overlaysTree] ...
-      
-      // Inside Layer (Persistent)
-      layer_ManholeCovers_Inside = new L.geoJson(json_ManholeCovers_Inside, {
-        attribution: "", interactive: true, dataVar: "json_ManholeCovers_Inside",
-        layerName: "layer_ManholeCovers_Inside", pane: "pane_ManholeCovers_1",
-        onEachFeature: pop_ManholeCovers_1,
-        pointToLayer: function (feature, latlng) { return L.circleMarker(latlng, getActiveStyle(false)); },
+      // 3. Create LayerCollections dynamically
+      zoneLayers = {};
+      Object.keys(manholesByZone).forEach(function(z) {
+          var fc = { "type": "FeatureCollection", "features": manholesByZone[z] };
+          var isOutside = (z === 'Outside Boundary');
+          var layerColor = isOutside ? '#555555' : (z === 'Zone A' ? '#22c55e' : '#3b82f6');
+          
+          zoneLayers[z] = new L.geoJson(fc, {
+              attribution: "", interactive: true,
+              pane: "pane_ManholeCovers_1",
+              onEachFeature: pop_ManholeCovers_1,
+              pointToLayer: function (feature, latlng) { 
+                  return L.circleMarker(latlng, {
+                      radius: defaultManholeRadius,
+                      fillColor: layerColor,
+                      color: '#232323',
+                      weight: 1,
+                      fillOpacity: 1
+                  }); 
+              }
+          });
+          bounds_group.addLayer(zoneLayers[z]);
+          map.addLayer(zoneLayers[z]);
       });
-      bounds_group.addLayer(layer_ManholeCovers_Inside);
-      map.addLayer(layer_ManholeCovers_Inside);
-
-      // Outside Layer (Persistent)
-      layer_ManholeCovers_Outside = new L.geoJson(json_ManholeCovers_Outside, {
-        attribution: "", interactive: true, dataVar: "json_ManholeCovers_Outside",
-        layerName: "layer_ManholeCovers_Outside", pane: "pane_ManholeCovers_1",
-        onEachFeature: pop_ManholeCovers_1,
-        pointToLayer: function (feature, latlng) { return L.circleMarker(latlng, getActiveStyle(true)); },
-      });
-      bounds_group.addLayer(layer_ManholeCovers_Outside);
-      map.addLayer(layer_ManholeCovers_Outside);
-
 
       function pop_subdivs(feature, layer) {
         layer.on({
@@ -1423,6 +1473,19 @@
           addClassToPopupIfMedia(content, e.popup);
         });
         layer.bindPopup(content, { maxHeight: 400 });
+        
+        // Add permanent labels for subdivisions
+        layer.bindTooltip(
+          feature.properties["Sub_Div"] !== null
+            ? String(feature.properties["Sub_Div"])
+            : "",
+          { 
+            permanent: true, 
+            direction: 'center', 
+            className: "css_subdivs",
+            offset: [0, 0]
+          }
+        );
       }
 
       function style_subdivs_0() {
@@ -1462,58 +1525,46 @@
                      '</div>' +
                      '<div class="layer-btns">' +
                        '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'layer_subdivs\', event)" title="Zoom to Layer"></i>' +
+                       '<i class="fas fa-tags categorize-layer-btn" id="layer_subdivs_categorize" onclick="applyCategorizedSymbology(\'layer_subdivs\', \'Sub_Div\', event)" title="Categorize by zone"></i>' +
                      '</div>' +
                    '</div>' +
                  '</div>',
           layer: layer_subdivs,
           id: 'layer_subdivs'
-        },
-        {
-          id: 'ManholeCovers_Inside',
-          label: '<div class="layer-row-container">' +
-                   '<div class="layer-label-top">' +
-                     '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name" id="label_inside">Inside Boundary (' + totalInside.length + ')</span>' +
-                     '</div>' +
-                     '<div class="layer-btns">' +
-                       '<i class="fas fa-layer-group categorize-layer-btn" id="ManholeCovers_Inside_categorize" onclick="applyCategorizedSymbology(\'ManholeCovers_Inside\', \'Sub_Div\', event)" title="Categorize by subdivision"></i>' +
-                       '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'ManholeCovers_Inside\', event)" title="Zoom to Layer"></i>' +
-                     '</div>' +
-                   '</div>' +
-                   '<div class="layer-controls">' +
-                     '<div class="layer-color-picker-wrapper">' +
-                       '<input type="color" id="ManholeCovers_Inside_color" class="layer-color-picker" value="' + defaultManholeColor + '" onchange="changeLayerColor(\'ManholeCovers_Inside\', this.value)" title="Change Layer Color">' +
-                     '</div>' +
-                     '<input type="range" id="ManholeCovers_Inside_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'ManholeCovers_Inside_number\').value=this.value" onchange="changeLayerSize(\'ManholeCovers_Inside\', this.value)" title="Change Marker Size">' +
-                     '<input type="number" id="ManholeCovers_Inside_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'ManholeCovers_Inside\', this.value); document.getElementById(\'ManholeCovers_Inside_range\').value=this.value">' +
-                   '</div>' +
-                 '</div>',
-          layer: layer_ManholeCovers_Inside,
-        },
-        {
-          id: 'ManholeCovers_Outside',
-          label: '<div class="layer-row-container">' +
-                   '<div class="layer-label-top">' +
-                     '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name" id="label_outside">Outside Boundary (' + totalOutside.length + ')</span>' +
-                     '</div>' +
-                     '<div class="layer-btns">' +
-                       '<i class="fas fa-layer-group categorize-layer-btn" id="ManholeCovers_Outside_categorize" onclick="applyCategorizedSymbology(\'ManholeCovers_Outside\', \'Sub_Div\', event)" title="Categorize by subdivision"></i>' +
-                       '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'ManholeCovers_Outside\', event)" title="Zoom to Layer"></i>' +
-                     '</div>' +
-                   '</div>' +
-                   '<div class="layer-controls">' +
-                     '<div class="layer-color-picker-wrapper">' +
-                       '<input type="color" id="ManholeCovers_Outside_color" class="layer-color-picker" value="#555555" onchange="changeLayerColor(\'ManholeCovers_Outside\', this.value)" title="Change Layer Color">' +
-                     '</div>' +
-                     '<input type="range" id="ManholeCovers_Outside_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'ManholeCovers_Outside_number\').value=this.value" onchange="changeLayerSize(\'ManholeCovers_Outside\', this.value)" title="Change Marker Size">' +
-                     '<input type="number" id="ManholeCovers_Outside_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'ManholeCovers_Outside\', this.value); document.getElementById(\'ManholeCovers_Outside_range\').value=this.value">' +
-                   '</div>' +
-                 '</div>',
-          layer: layer_ManholeCovers_Outside,
-        },
-        { label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: "bm" },
+        }
       ];
+
+      // Add dynamic manhole layers to tree
+      Object.keys(zoneLayers).forEach(function(zName) {
+          var isOutside = (zName === 'Outside Boundary');
+          var defaultColor = isOutside ? '#555555' : (zName === 'Zone A' ? '#22c55e' : '#3b82f6');
+          var cleanId = zName.replace(/\s+/g, '_');
+          
+          overlaysTree.push({
+              id: cleanId,
+              label: '<div class="layer-row-container">' +
+                       '<div class="layer-label-top">' +
+                         '<div class="layer-label-group">' +
+                           '<span class="leaflet-layerstree-header-name">' + zName + ' (' + manholesByZone[zName].length + ')</span>' +
+                         '</div>' +
+                         '<div class="layer-btns">' +
+                           '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'' + cleanId + '\', event)" title="Zoom to Layer"></i>' +
+                         '</div>' +
+                       '</div>' +
+                       '<div class="layer-controls">' +
+                         '<div class="layer-color-picker-wrapper">' +
+                           '<input type="color" id="' + cleanId + '_color" class="layer-color-picker" value="' + defaultColor + '" onchange="changeLayerColor(\'' + cleanId + '\', this.value)" title="Change Layer Color">' +
+                         '</div>' +
+                         '<input type="range" id="' + cleanId + '_range" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" oninput="document.getElementById(\'' + cleanId + '_number\').value=this.value" onchange="changeLayerSize(\'' + cleanId + '\', this.value)" title="Change Marker Size">' +
+                         '<input type="number" id="' + cleanId + '_number" min="2" max="30" step="0.5" value="' + defaultManholeRadius + '" onchange="changeLayerSize(\'' + cleanId + '\', this.value); document.getElementById(\'' + cleanId + '_range\').value=this.value">' +
+                       '</div>' +
+                     '</div>',
+              layer: zoneLayers[zName]
+          });
+      });
+
+      overlaysTree.push({ label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: "bm" });
+
       var lay = L.control.layers.tree(null, overlaysTree, {
         collapsed: false,
       });
@@ -1536,8 +1587,13 @@
             });
           });
           
-          setSliderColorForLayer('ManholeCovers_Inside', defaultManholeColor);
-          setSliderColorForLayer('ManholeCovers_Outside', '#555555');
+          // Map dynamic zonal layers slider colors
+          Object.keys(zoneLayers).forEach(function(zName) {
+              var cleanId = zName.replace(/\s+/g, '_');
+              var cp = document.getElementById(cleanId + '_color');
+              if (cp) setSliderColorForLayer(cleanId, cp.value);
+          });
+          
           setSliderColorForLayer('Unique_Inside', '#00D1FF');
           setSliderColorForLayer('Unique_Outside', '#0084A1');
           
@@ -1697,38 +1753,7 @@
         }
       };
       setBounds();
-      var i = 0;
-      layer_subdivs.eachLayer(function (layer) {
-        var context = {
-          feature: layer.feature,
-          variables: {},
-        };
-        layer.bindTooltip(
-          layer.feature.properties["Sub_Div"] !== null
-            ? String(
-                "<div style=\"color: #eb1b1b; font-size: 14pt; font-weight: bold; font-family: 'Open Sans', sans-serif;\">" +
-                  layer.feature.properties["Sub_Div"]
-              ) + "</div>"
-            : "",
-          { permanent: true, offset: [-0, -16], className: "css_subdivs" }
-        );
-        labels.push(layer);
-        totalMarkers += 1;
-        layer.added = true;
-        addLabel(layer, i);
-        i++;
-      });
-      resetLabels([layer_subdivs]);
-      map.on("zoomend", function () {
-        resetLabels([layer_subdivs]);
-      });
-      map.on("layeradd", function () {
-        resetLabels([layer_subdivs]);
-      });
-      map.on("layerremove", function () {
-        resetLabels([layer_subdivs]);
-      });
-
+      
       // CSV and Image Upload Logic
       document
         .getElementById("uploadBtn")
