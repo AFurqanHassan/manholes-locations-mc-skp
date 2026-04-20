@@ -63,7 +63,7 @@
         display:block;
       }
       #sidebar {
-        width: 300px;
+        width: 380px;
         height: 100%;
         position: relative;
         display: flex;
@@ -204,8 +204,8 @@
         visibility: visible !important;
         margin-left: 10px !important;
         white-space: normal !important; /* Allow wrapping */
-        word-break: break-all !important; /* Break long words */
-        max-width: 220px !important; /* Slightly larger width so names are visible */
+        word-break: normal !important; 
+        max-width: 300px !important; 
         line-height: 1.4;
         padding: 4px 0;
       }
@@ -1369,6 +1369,10 @@
       manholesByZone = {
           'Outside Boundary': []
       };
+      // For unique filtering
+      manholesByZoneUnique = {
+          'Outside Boundary': []
+      };
       
       json_ManholeCovers_1.features.forEach(function(feature){
         var pt = feature.geometry.coordinates; // [lon, lat]
@@ -1383,32 +1387,38 @@
         if (!nearName) return; // Discard true outliers (>1.5km)
 
         var finalZone = zoneName || 'Outside Boundary';
+        var displayGroup = (finalZone === 'Outside Boundary') ? 'Outside Boundary' : 'Manhole Locations';
         
         // Update feature property
         feature.properties['Sub_Div'] = finalZone;
 
-        if (!manholesByZone[finalZone]) {
-            manholesByZone[finalZone] = [];
+        if (!manholesByZone[displayGroup]) {
+            manholesByZone[displayGroup] = [];
+            manholesByZoneUnique[displayGroup] = [];
         }
-        manholesByZone[finalZone].push(feature);
+        manholesByZone[displayGroup].push(feature);
 
-        // Populate Unique track (for the toggle view if needed)
+        // Populate Unique track
         if(!coordMap[coordStr]) {
             coordMap[coordStr] = true;
             uniqueFeatures.push(feature);
+            // Global unique data by zone
+            manholesByZoneUnique[displayGroup].push(feature);
         }
       });
 
-      // Populate legacy globals for backward compatibility with existing UI if needed
-      totalInside = (manholesByZone['Zone A'] || []).concat(manholesByZone['Zone B'] || []);
+      // Populate legacy globals for backward compatibility if needed
+      totalInside = manholesByZone['Manhole Locations'] || [];
       totalOutside = manholesByZone['Outside Boundary'] || [];
+      uniqueInside = manholesByZoneUnique['Manhole Locations'] || [];
+      uniqueOutside = manholesByZoneUnique['Outside Boundary'] || [];
 
-      // 3. Create LayerCollections dynamically
+      // Create LayerCollections dynamically
       zoneLayers = {};
       Object.keys(manholesByZone).forEach(function(z) {
           var fc = { "type": "FeatureCollection", "features": manholesByZone[z] };
           var isOutside = (z === 'Outside Boundary');
-          var layerColor = isOutside ? '#555555' : (z === 'Zone A' ? '#22c55e' : '#3b82f6');
+          var layerColor = isOutside ? '#555555' : '#22c55e';
           
           zoneLayers[z] = new L.geoJson(fc, {
               attribution: "", interactive: true,
@@ -1519,10 +1529,10 @@
       var overlaysTree = [
         {
           label: '<div class="layer-row-container">' +
-                   '<div class="layer-label-top">' +
-                     '<div class="layer-label-group">' +
-                       '<span class="leaflet-layerstree-header-name">Subdivisions</span>' +
-                     '</div>' +
+                    '<div class="layer-label-top">' +
+                      '<div class="layer-label-group">' +
+                        '<span class="leaflet-layerstree-header-name">WASA Sheikhupura Jurisdiction</span>' +
+                      '</div>' +
                      '<div class="layer-btns">' +
                        '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'layer_subdivs\', event)" title="Zoom to Layer"></i>' +
                        '<i class="fas fa-tags categorize-layer-btn" id="layer_subdivs_categorize" onclick="applyCategorizedSymbology(\'layer_subdivs\', \'Sub_Div\', event)" title="Categorize by zone"></i>' +
@@ -1534,13 +1544,19 @@
         }
       ];
 
-      // Add dynamic manhole layers to tree
-      Object.keys(zoneLayers).forEach(function(zName) {
+      // Add dynamic manhole layers to tree, ensuring "Manhole Locations" is first and "Outside Boundary" is last
+      var layerKeys = Object.keys(zoneLayers).sort(function(a, b) {
+          if (a === 'Manhole Locations') return -1;
+          if (b === 'Manhole Locations') return 1;
+          return a.localeCompare(b);
+      });
+
+      layerKeys.forEach(function(zName) {
           var isOutside = (zName === 'Outside Boundary');
-          var defaultColor = isOutside ? '#555555' : (zName === 'Zone A' ? '#22c55e' : '#3b82f6');
+          var defaultColor = isOutside ? '#555555' : '#22c55e';
           var cleanId = zName.replace(/\s+/g, '_');
           
-          overlaysTree.push({
+          var layerNode = {
               id: cleanId,
               label: '<div class="layer-row-container">' +
                        '<div class="layer-label-top">' +
@@ -1549,6 +1565,7 @@
                          '</div>' +
                          '<div class="layer-btns">' +
                            '<i class="fas fa-search-plus zoom-layer-btn" onclick="zoomToLayer(\'' + cleanId + '\', event)" title="Zoom to Layer"></i>' +
+                           (!isOutside ? '<i class="fas fa-tags categorize-layer-btn" id="' + cleanId + '_categorize" onclick="applyCategorizedSymbology(\'' + cleanId + '\', \'Sub_Div\', event)" title="Split by zonal division"></i>' : '') +
                          '</div>' +
                        '</div>' +
                        '<div class="layer-controls">' +
@@ -1560,7 +1577,9 @@
                        '</div>' +
                      '</div>',
               layer: zoneLayers[zName]
-          });
+          };
+          
+          overlaysTree.push(layerNode);
       });
 
       overlaysTree.push({ label: "OSM Standard", layer: layer_OSMStandard_0, radioGroup: "bm" });
@@ -1651,46 +1670,56 @@
           opt.classList.toggle('active', opt.dataset.view === view);
         });
 
-        if (view === 'unique') {
+        var isUnique = (view === 'unique');
+        if (isUnique) {
           container.classList.add('unique-active');
-          // Update Persistent layers with Unique data
-          if (typeof layer_ManholeCovers_Inside !== 'undefined') {
-            layer_ManholeCovers_Inside.clearLayers();
-            layer_ManholeCovers_Inside.addData(json_UniqueInside);
-          }
-          if (typeof layer_ManholeCovers_Outside !== 'undefined') {
-            layer_ManholeCovers_Outside.clearLayers();
-            layer_ManholeCovers_Outside.addData(json_UniqueOutside);
-          }
-
-          var l_in = document.getElementById('label_inside');
-          var l_out = document.getElementById('label_outside');
-          if(l_in) l_in.textContent = 'Inside Boundary (' + uniqueInside.length + ')';
-          if(l_out) l_out.textContent = 'Outside Boundary (' + uniqueOutside.length + ')';
-          
-          // Restore Unique colors from state
-          changeLayerColor('ManholeCovers_Inside', modeColors.unique.ManholeCovers_Inside);
-          changeLayerColor('ManholeCovers_Outside', modeColors.unique.ManholeCovers_Outside);
         } else {
           container.classList.remove('unique-active');
-          // Restore Total data
-          if (typeof layer_ManholeCovers_Inside !== 'undefined') {
-            layer_ManholeCovers_Inside.clearLayers();
-            layer_ManholeCovers_Inside.addData(json_ManholeCovers_Inside);
-          }
-          if (typeof layer_ManholeCovers_Outside !== 'undefined') {
-            layer_ManholeCovers_Outside.clearLayers();
-            layer_ManholeCovers_Outside.addData(json_ManholeCovers_Outside);
-          }
+        }
 
-          var l_in = document.getElementById('label_inside');
-          var l_out = document.getElementById('label_outside');
-          if(l_in) l_in.textContent = 'Inside Boundary (' + totalInside.length + ')';
-          if(l_out) l_out.textContent = 'Outside Boundary (' + totalOutside.length + ')';
-          
-          // Restore Total colors from state
-          changeLayerColor('ManholeCovers_Inside', modeColors.total.ManholeCovers_Inside);
-          changeLayerColor('ManholeCovers_Outside', modeColors.total.ManholeCovers_Outside);
+        // Update all zonal layers
+        Object.keys(zoneLayers).forEach(function(zName) {
+            var layer = zoneLayers[zName];
+            var data = isUnique ? manholesByZoneUnique[zName] : manholesByZone[zName];
+            
+            if (layer && data) {
+                layer.clearLayers();
+                layer.addData(data);
+                
+                // Refresh layer colors and sizes based on current mode colors
+                var cleanId = zName.replace(/\s+/g, '_');
+                var currentMode = isUnique ? 'unique' : 'total';
+                
+                // Get the intended color for this mode
+                var targetColor = modeColors[currentMode] && modeColors[currentMode][cleanId] 
+                                  ? modeColors[currentMode][cleanId] 
+                                  : (zName === 'Outside Boundary' ? '#555555' : '#22c55e');
+
+                // Apply styles to the new features
+                layer.eachLayer(function(l) {
+                    if (l.setStyle) {
+                        l.setStyle({ 
+                            fillColor: targetColor,
+                            radius: defaultManholeRadius 
+                        });
+                    }
+                });
+                
+                // Update Leaflet Tree labels with new counts
+                var labelName = zName + ' (' + data.length + ')';
+                var headerName = document.querySelector('[id*="' + cleanId + '"] .leaflet-layerstree-header-name');
+                if (headerName) headerName.textContent = labelName;
+            }
+        });
+
+        // Backward compatibility for fixed layers if they ever get initialized
+        if (typeof layer_ManholeCovers_Inside !== 'undefined' && layer_ManholeCovers_Inside) {
+          layer_ManholeCovers_Inside.clearLayers();
+          layer_ManholeCovers_Inside.addData(isUnique ? {type:"FeatureCollection", features:uniqueInside} : {type:"FeatureCollection", features:totalInside});
+        }
+        if (typeof layer_ManholeCovers_Outside !== 'undefined' && layer_ManholeCovers_Outside) {
+          layer_ManholeCovers_Outside.clearLayers();
+          layer_ManholeCovers_Outside.addData(isUnique ? {type:"FeatureCollection", features:uniqueOutside} : {type:"FeatureCollection", features:totalOutside});
         }
       }
 
